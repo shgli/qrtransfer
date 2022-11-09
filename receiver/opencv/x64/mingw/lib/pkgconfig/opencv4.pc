@@ -1,0 +1,13 @@
+# Package Information for pkg-config
+
+prefix=C:/qrtransfer/build/install
+exec_prefix=${prefix}
+libdir=${exec_prefix}/x64/mingw/lib
+includedir=${prefix}/include
+
+Name: OpenCV
+Description: Open Source Computer Vision Library
+Version: 4.6.0
+Libs: -L${exec_prefix}/x64/mingw/lib -lopencv_gapi460 -lopencv_stitching460 -lopencv_aruco460 -lopencv_barcode460 -lopencv_bgsegm460 -lopencv_video460 -lopencv_bioinspired460 -lopencv_ccalib460 -lopencv_datasets460 -lopencv_ml460 -lopencv_dnn_objdetect460 -lopencv_dnn_superres460 -lopencv_dpm460 -lopencv_highgui460 -lopencv_videoio460 -lopencv_imgcodecs460 -lopencv_face460 -lopencv_photo460 -lopencv_fuzzy460 -lopencv_hfs460 -lopencv_wechat_qrcode460 -lopencv_objdetect460 -lopencv_calib3d460 -lopencv_features2d460 -lopencv_dnn460 -lopencv_imgproc460 -lopencv_flann460 -lopencv_core460
+Libs.private: -lpthread
+Cflags: -I${includedir}
