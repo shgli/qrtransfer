@@ -41,7 +41,21 @@
        </widget>
       </item>
       <item>
-       <widget class="QLineEdit" name="mWaitMS"/>
+       <widget class="QLineEdit" name="mImgCfg">
+        <property name="text">
+         <string>1x3</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLineEdit" name="mScalar">
+        <property name="text">
+         <string>2</string>
+        </property>
+        <property name="maxLength">
+         <number>10</number>
+        </property>
+       </widget>
       </item>
       <item>
        <widget class="QProgressBar" name="mProgressBar">

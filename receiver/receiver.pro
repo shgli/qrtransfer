@@ -6,11 +6,15 @@ QMAKE_MACOSX_DEPLOYMENT_TARGET=12.0
 DESTDIR = $$PWD/bin
 
 SOURCES += \
+    DecodeThread.cpp \
+    ReceiveThread.cpp \
     main.cpp \
     mainwindow.cpp\
 
 
 HEADERS += \
+        DecodeThread.h \
+        ReceiveThread.h \
         mainwindow.h\
         imgconvertors.h
 
@@ -19,8 +23,8 @@ FORMS += \
 OPENCV_WIN32_LIB_PATH=$$PWD/opencv/x64/mingw/lib
 OPENCV_ELSE_LIB_PATH=$$PWD/opencv/lib
 win32:LIBS += $$OPENCV_WIN32_LIB_PATH/libopencv_core460.dll.a $$OPENCV_WIN32_LIB_PATH/libopencv_imgproc460.dll.a $$OPENCV_WIN32_LIB_PATH/libopencv_wechat_qrcode460.dll.a
-else:LIBS += -L$$OPENCV_ELSE_LIB_PATH -lopencv_core -lopencv_imgproc -lopencv_wechat_qrcode
-INCLUDEPATH += $$PWD/opencv/include
+else:LIBS += -L$$OPENCV_ELSE_LIB_PATH -lopencv_core -lopencv_imgproc -lopencv_wechat_qrcode #-L$$PWD/zxing/lib -lzxing
+INCLUDEPATH += $$PWD/opencv/include #$$PWD/zxing/include
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

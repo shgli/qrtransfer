@@ -28,6 +28,13 @@
        <widget class="QLineEdit" name="mFileName"/>
       </item>
       <item>
+       <widget class="QLabel" name="mAckNum">
+        <property name="text">
+         <string>00000</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QPushButton" name="mFileBrowserBtn">
         <property name="text">
          <string>Browser</string>

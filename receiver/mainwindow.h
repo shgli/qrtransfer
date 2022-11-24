@@ -6,32 +6,11 @@
 #include <QFile>
 #include <memory>
 #include <QTimer>
-#include <QThread>
+#include "ReceiveThread.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
-
-class ReceiveThread : public QThread
-{
-     Q_OBJECT
-
-public:
-    ReceiveThread(const QString& fileName);
-
-    void run() override;
-
-    void stop() { mIsRunning = false; }
-
-signals:
-    void acked(int seqId);
-    void failed(int seqId);
-private:
-    QImage grubScreen(int x0, int y0, int x2, int y2);
-
-    std::unique_ptr<QFile> mOutputFile;
-    std::atomic_bool mIsRunning{true};
-};
 
 class MainWindow : public QMainWindow
 {

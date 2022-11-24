@@ -6,10 +6,14 @@ QMAKE_MACOSX_DEPLOYMENT_TARGET=12.0
 DESTDIR = $$PWD/bin
 
 SOURCES += \
+    Ack.cpp \
+    SendThread.cpp \
     main.cpp \
     mainwindow.cpp
 
 HEADERS += \
+    Ack.h \
+    SendThread.h \
     mainwindow.h
 
 FORMS += \
