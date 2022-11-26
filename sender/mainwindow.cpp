@@ -26,10 +26,8 @@ MainWindow::MainWindow(QWidget *parent)
             ui->pushButton->setText("start");
             ui->mScalar->setEnabled(true);
             ui->mImgCfg->setEnabled(true);
-            if(!mCfgImg.isNull())
-            {
-                ui->label->setPixmap(QPixmap::fromImage(mCfgImg));
-            }
+            mIsNormalFinish = false;
+            ui->label->setPixmap(QPixmap::fromImage(mCfgImg));
             return;
         }
 
@@ -56,13 +54,14 @@ MainWindow::MainWindow(QWidget *parent)
             int pixelChannelCnt = imgCfgs[1].toInt();
             mSender = std::make_unique<SendThread>(transferFileName, std::move(pAckWaiter), scalar, pixelChannelCnt, imgCnt);
             mTotalCnt = 0;
+            ui->mProgressBar->setValue(0);
+            mIsNormalFinish = true;
             connect(mSender.get(), &SendThread::qrReady, this, [this](QImage img, int seqId)
             {
                 if(0 == mTotalCnt)
                 {
                     mTotalCnt = seqId;
                     ui->mProgressBar->setRange(0, mTotalCnt-1);
-                    mCfgImg = img;
                 }
 
                 ui->label->setPixmap(QPixmap::fromImage(img));
@@ -74,7 +73,12 @@ MainWindow::MainWindow(QWidget *parent)
                 ui->pushButton->setText("start");
                 ui->mScalar->setEnabled(true);
                 ui->mImgCfg->setEnabled(true);
-                QFile::remove(transferFileName);
+
+                if(mIsNormalFinish)
+                {
+                    QFile::remove(transferFileName);
+                }
+                mSender.release();
             });
 
             mSender->start();

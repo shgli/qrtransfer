@@ -2,14 +2,14 @@
 #include <QApplication>
 #include <QScreen>
 #include <QDir>
-static constexpr size_t SEQ_ID_SIZE = 8;
-QImage ReceiveThread::grubScreen(int x0, int y0, int x2, int y2)
+#include <bitset>
+
+QImage ReceiveThread::grubScreen(QRect& area)
 {
-    int w = x2-x0;
-    int h = y2-y0;
     QScreen* pScreen = QApplication::primaryScreen();
 
-    QPixmap full = pScreen->grabWindow(0, x0, y0, w, h);
+    QPixmap full = pScreen->grabWindow(0, area.left(), area.top(), area.width(), area.height());
+//    full.save("ok.png");
     return full.toImage();
 }
 
@@ -21,23 +21,53 @@ ReceiveThread::ReceiveThread(const QString& fileName)
 
     mCfgBuffer.resize(DecodeThread::maxBufferSize());
     mDecodeSep = std::make_unique<QSemaphore>(0);
-    mDecodeThreads.push_back(std::make_unique<DecodeThread>(0, 0, mDecodeSep.get(), mCfgBuffer.data()));
+    mDecodeThreads.push_back(std::make_unique<DecodeThread>(0, mDecodeSep.get(), mCfgBuffer.data()));
+}
+
+ReceiveThread::~ReceiveThread()
+{
+    stop();
+}
+
+void ReceiveThread::stop()
+{
+    if(!mIsRunning)
+    {
+        return;
+    }
+
+    mIsRunning = false;
+    mDecodeSep->release(mRowCnt*mColCnt*mChannelCnt);
+
+    for(auto& pDecoder : mDecodeThreads)
+    {
+        pDecoder->stop();
+    }
+
+
+    while (isRunning())
+    {
+        msleep(5);
+    }
+
+    mDecodeThreads.clear();
 }
 
 void ReceiveThread::run()
 {
-
+    static qreal pixelRatio = qApp->primaryScreen()->devicePixelRatio();
     std::vector<cv::Mat> points;   // qrcode: Retangle, not RotatedBox
-    int x0 = 0, y0 = 0;
-    int x2 = -1, y2 = -1;
-    bool grubFullScreen = true;
+    QRect fullScreenRect = qApp->primaryScreen()->virtualGeometry();
+    QRect grubRect = fullScreenRect;
 
     auto& pCfgDecoder = *mDecodeThreads.begin();
     pCfgDecoder->start();
+    DecodeTask initTask{0, 0, QRect(0, 0, grubRect.width()*pixelRatio, grubRect.height()*pixelRatio), QImage()};
     while(mIsRunning && !pCfgDecoder->decodeSuccess())
     {
-        QImage screen = grubScreen(x0, y0, x2, y2);
-        pCfgDecoder->setImage(screen);
+        initTask.img = grubScreen(grubRect);
+
+        pCfgDecoder->pushTask(initTask);
         mDecodeSep->acquire(1);
         msleep(5);
     }
@@ -53,84 +83,103 @@ void ReceiveThread::run()
     mOutputFile->resize(fileSize);
     emit acked(0, "0|1");
 
+    pCfgDecoder->results().clear();
     char* pFileData = (char*)mOutputFile->map(0, fileSize);
-    mDecodeSep = std::make_unique<QSemaphore>(mChannelCnt);
+    mDecodeSep = std::make_unique<QSemaphore>(0);
     pCfgDecoder->reInitialize(mTotalCnt, mDecodeSep.get(), pFileData);
 
     for(int channel = 1; channel < mChannelCnt; ++channel)
     {
-        mDecodeThreads.push_back(std::make_unique<DecodeThread>(channel, mTotalCnt, mDecodeSep.get(), pFileData));
+        mDecodeThreads.push_back(std::make_unique<DecodeThread>(mTotalCnt, mDecodeSep.get(), pFileData));
         mDecodeThreads[channel]->start();
     }
 
-    QSet<QString> prevAcked;
-    prevAcked.insert("0");
+    QSet<int> prevAcked;
+    prevAcked.insert(0);
     int ackedCnt = 1;
     while(ackedCnt < (mTotalCnt+1) && mIsRunning)
     {
-        QImage screen = grubScreen(x0, y0, x2, y2);
-        for(int channel = 0; channel < mChannelCnt; ++channel)
+        QImage screen = grubScreen(grubRect);
+        int taskCnt = 0;
+        for(int r = 0; r < mRowCnt; ++r)
         {
-            mDecodeThreads[channel]->setImage(screen);
+            for(int c = 0; c < mColCnt; ++c)
+            {
+                for(int channel = 0; channel < mChannelCnt; ++channel, ++taskCnt)
+                {
+                    DecodeTask task{channel, taskCnt, QRect(0, 0, grubRect.width()*pixelRatio, grubRect.height()*pixelRatio), screen};
+                    mDecodeThreads[channel]->pushTask(task);
+                }
+            }
         }
 
-        mDecodeSep->acquire(mChannelCnt);
+        mDecodeSep->acquire(taskCnt);
+        if(!mIsRunning) break;
 
-        QStringList syncIds;
-        std::vector<QRect> areas;
+        QSet<int> syncIds;
+        QSet<int> successIdxs;
+        QList<QRect> areas;
 
-        bool hasDecodeSamething{false};
+        std::bitset<64> decodedRows, decodedCols;
         for(int channel = 0; channel < mChannelCnt; ++channel)
         {
             auto& pDecoder = mDecodeThreads[channel];
             if(pDecoder->decodeSuccess())
             {
-                hasDecodeSamething = true;
-                for(auto& syncId : pDecoder->syncIds())
+                for(auto& ret : pDecoder->results())
                 {
-                    if(!prevAcked.contains(syncId))
+                    if(!prevAcked.contains(ret.syncId))
                     {
-                        syncIds.push_back(syncId);
+                        syncIds.insert(ret.syncId);
+                        successIdxs.insert(ret.index);
                     }
-                }
-
-                for(auto& area : pDecoder->areas())
-                {
-                    areas.push_back(area);
+                    areas.push_back(ret.area);
+                    int row = ret.index/mChannelCnt/mColCnt;
+                    int col = ret.index/mChannelCnt%mColCnt;
+                    decodedRows.set(row);
+                    decodedCols.set(col);
                 }
             }
+
+            pDecoder->results().clear();
         }
 
         if(!syncIds.empty())
         {
-            prevAcked.clear();
-            for(auto syncId : syncIds)
+            QStringList ackDetail;
+            ackDetail.push_back(QString::number(ackedCnt));
+
+            std::vector<uint64_t> successDetail(taskCnt/64+((0 != (taskCnt%64)) ? 1 : 0), 0UL);
+            for(auto susIdx : successIdxs)
             {
-                prevAcked.insert(syncId);
+                successDetail[susIdx/64] |= 1 << (susIdx%64);
             }
 
-            syncIds.push_front(QString::number(ackedCnt));
-            ackedCnt += syncIds.size()-1;
-            QString composedSyncId = syncIds.join('|');
-            qDebug() << ackedCnt << ":" << composedSyncId;
-            emit acked(ackedCnt, composedSyncId);
+            for(uint64_t detail : successDetail)
+            {
+                ackDetail.push_back(QString::number(detail));
+            }
+
+            QString sAckDetail = ackDetail.join("|");
+            qDebug() << ackedCnt << ":" << sAckDetail;
+            ackedCnt += syncIds.size();
+            emit acked(ackedCnt, sAckDetail);
+            prevAcked.swap(syncIds);
         }
 
-        if(hasDecodeSamething)
+        if(decodedRows.count() == (size_t)mRowCnt && decodedCols.count() == (size_t)mColCnt)
         {
-            qDebug() << "before:" << x0 << "," << y0 << "," << x2 << "," << y2;
-            grubFullScreen = !dectQRArea(x0, y0, x2, y2, areas);
-            if(x2 == -1 && y2 == -1)
+            qDebug() << "before:" << grubRect;
+            bool grubFullScreen = !dectQRArea(grubRect, areas);
+            if(grubRect == fullScreenRect)
             {
-                grubFullScreen = !dectQRArea(x0, y0, x2, y2, areas);
+                grubFullScreen = !dectQRArea(grubRect, areas);
             }
-            qDebug() << "after:" << x0 << "," << y0 << "," << x2 << "," << y2;
+            qDebug() << "after :" << grubRect << ":" << grubFullScreen;
         }
         else
         {
-            x0 = y0 = 0;
-            x2 = y2 = -1;
-            grubFullScreen = true;
+            grubRect = fullScreenRect;
         }
 
         msleep(5);
@@ -139,9 +188,8 @@ void ReceiveThread::run()
     mOutputFile->close();
 }
 
-bool ReceiveThread::dectQRArea(int& x0, int& y0, int& x2, int& y2, std::vector<QRect>& areas)
+bool ReceiveThread::dectQRArea(QRect& grubArea, QList<QRect>& areas)
 {
-    static const qreal pixelRatio = qApp->devicePixelRatio();
     int xx0(100000), yy0(100000), xx2(0), yy2(0);
     int single_width = 0, single_height = 0;
     for(auto& area : areas)
@@ -164,8 +212,9 @@ bool ReceiveThread::dectQRArea(int& x0, int& y0, int& x2, int& y2, std::vector<Q
     int col_cnt = (xx2-xx0+1) / single_width;
     if(col_cnt >= mColCnt)
     {
-        x2 = x0 + xx2 + 1; y2 = y0 + yy2 + 1;
-        x0 += xx0-1; y0 += yy0-1;
+        int x2 = grubArea.left() + xx2 + 1; int y2 = grubArea.top() + yy2 + 1;
+        int x0 = grubArea.left() + xx0 - 1; int y0 = grubArea.top() + yy0 - 1;
+        grubArea = QRect(QPoint(x0, y0), QPoint(x2, y2));
         return true;
     }
 

@@ -3,14 +3,15 @@
 
 #include <QMainWindow>
 #include <QImage>
+#include <QFile>
 #include <memory>
-
+#include <QTimer>
+#include "ReceiveThread.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
-class SendThread;
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -21,12 +22,9 @@ public:
 
 private:
     void activeSelf();
-
     Ui::MainWindow *ui;
 
-    std::unique_ptr<SendThread> mSender;
-    QImage mCfgImg;
-    int mTotalCnt{0};
-    std::atomic_bool mIsNormalFinish{true};
+    std::unique_ptr<ReceiveThread> mReceiver;
+    int mTotalCnt = 0;
 };
 #endif // MAINWINDOW_H

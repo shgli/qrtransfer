@@ -48,11 +48,10 @@ size_t DecodeThread::seqenceIdSize() { return SEQ_ID_SIZE; }
 size_t DecodeThread::maxDataSize() { return MAX_BUFFER_SIZE; }
 size_t DecodeThread::maxBufferSize() { return seqenceIdSize()+maxDataSize(); }
 
-DecodeThread::DecodeThread(int channel, int totalCnt
+DecodeThread::DecodeThread(int totalCnt
                            , QSemaphore* finishNotifier
                            , char* pFile)
-    :mChannel(channel)
-    ,mTotalCnt(totalCnt)
+    :mTotalCnt(totalCnt)
     ,mFinishNotifier(finishNotifier)
     ,mOutFile(pFile)
 {
@@ -71,28 +70,44 @@ void DecodeThread::reInitialize(int totalCnt
     mOutFile = pFile;
 }
 
-void DecodeThread::setImage(QImage img)
+void DecodeThread::stop()
 {
-    mWorkingMut.lock();
-    mWorkingImage = img;
-    mSyncIds.clear();
-    mAreas.clear();
+    if(mIsRunning)
+    {
+        {
+            mIsRunning = false;
+            std::unique_lock lock(mTaskMut);
+            mTaskCond.notify_one();
+        }
 
-    mWorkingCond.notify_one();
-    mWorkingMut.unlock();
+        while (isRunning())
+        {
+            msleep(5);
+        }
+    }
 }
 
-QImage DecodeThread::getChannel(int channel, QImage img)
+void DecodeThread::pushTask(const DecodeTask& task)
 {
-     QImage ret(img.width(), img.height(), QImage::Format_Indexed8);
+    std::unique_lock lock(mTaskMut);
+    mPendingTasks.enqueue(task);
+    mTaskCond.notify_one();
+}
+
+QImage DecodeThread::chopTaskImg(DecodeTask& task)
+{
+     QImage ret(task.area.width(), task.area.height(), QImage::Format_Indexed8);
      ret.setColorTable(mColorTable);
-     for(int y = 0; y < img.height(); ++y)
+     int ty = 0;
+     for(int y = task.area.top(); y <= task.area.bottom(); ++y, ty++)
      {
-         for(int x = 0; x < img.width(); ++x)
+         int tx = 0;
+         for(int x = task.area.left(); x <= task.area.right(); ++x, ++tx)
          {
-             QColor clr = img.pixelColor(x, y);
-             uint idx = 0==channel? clr.red(): (1==channel? clr.green() : clr.blue());
-             ret.setPixel(x, y, idx);
+             QColor clr = task.img.pixelColor(x, y);
+             uint idx = 0==task.channel? clr.red(): (1==task.channel? clr.green() : clr.blue());
+
+             ret.setPixel(tx, ty, idx);
          }
      }
 
@@ -113,24 +128,26 @@ void DecodeThread::run()
 
     while(mIsRunning)
     {
-        QImage img;
-        mWorkingMut.lock();
-        mWorkingCond.wait(&mWorkingMut);
-        img = mWorkingImage;
-        mWorkingMut.unlock();
-        if(!mIsRunning)
+        DecodeTask task;
         {
-            break;
+            std::unique_lock lock(mTaskMut);
+            mTaskCond.wait(lock, [this](){ return !mPendingTasks.empty() || !mIsRunning; });
+            if(!mIsRunning) break;
+
+            task = mPendingTasks.dequeue();
         }
 
-        QImage pChannel = getChannel(mChannel, img);
+        QImage pChannel = chopTaskImg(task);
         cv::Mat  cvImg = ASM::QImageToCvMat(pChannel);
         std::vector<cv::Mat> points;
         auto res = detector.detectAndDecode(cvImg, points);
 
         if(res.size() > 0)
         {
-            for(auto& received : res)
+            assert(1 == res.size());
+            DecodeResult ret;
+            ret.index = task.index;
+            std::string& received = res[0];
             {
                 char* szSyncId = received.data();
                 szSyncId[SEQ_ID_SIZE-1] = '\0';
@@ -142,22 +159,23 @@ void DecodeThread::run()
                     char* dst = mOutFile+(mTotalCnt-syncId)*MAX_BUFFER_SIZE;
                     memcpy(dst, data, received.size()-SEQ_ID_SIZE);
                 }
-                mSyncIds.push_back(QString::number(syncId));
+                ret.syncId = syncId;
             }
 
-            for(auto& p : points)
+            auto& p = points[0];
             {
                 static const qreal pixelRatio = qApp->devicePixelRatio();
 
-                int x2 = int((p.at<float>(2, 0)+pixelRatio-1.0)/pixelRatio);
-                int y2 = int((p.at<float>(2, 1)+pixelRatio-1.0)/pixelRatio);
+                int x2 = int((p.at<float>(2, 0))/pixelRatio+0.5);
+                int y2 = int((p.at<float>(2, 1))/pixelRatio+0.5);
 
-                int x0 = int(p.at<float>(0, 0)/pixelRatio);
-                int y0 = int(p.at<float>(0, 1)/pixelRatio);
+                int x0 = int(p.at<float>(0, 0)/pixelRatio+0.5);
+                int y0 = int(p.at<float>(0, 1)/pixelRatio+0.5);
 
-                QRect area(QPoint(x0, y0), QPoint(x2, y2));
-                mAreas.push_back(area);
+                ret.area = QRect(QPoint(x0, y0), QPoint(x2, y2));
             }
+
+            mResults.push_back(ret);
         }
 
         mFinishNotifier->release(1);
