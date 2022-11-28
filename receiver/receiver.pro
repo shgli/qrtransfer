@@ -6,6 +6,7 @@ QMAKE_MACOSX_DEPLOYMENT_TARGET=12.0
 DESTDIR = $$PWD/bin
 
 SOURCES += \
+    AreaDetector.cpp \
     DecodeThread.cpp \
     ReceiveThread.cpp \
     main.cpp \
@@ -13,6 +14,7 @@ SOURCES += \
 
 
 HEADERS += \
+        AreaDetector.h \
         DecodeThread.h \
         ReceiveThread.h \
         mainwindow.h\

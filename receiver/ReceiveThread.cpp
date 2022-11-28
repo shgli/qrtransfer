@@ -3,14 +3,23 @@
 #include <QScreen>
 #include <QDir>
 #include <bitset>
+#include "AreaDetector.h"
 
-QImage ReceiveThread::grubScreen(QRect& area)
+QImage ReceiveThread::grubScreen(QRect& area, QRect& qrCode)
 {
     QScreen* pScreen = QApplication::primaryScreen();
 
     QPixmap full = pScreen->grabWindow(0, area.left(), area.top(), area.width(), area.height());
-//    full.save("ok.png");
-    return full.toImage();
+    QImage img = full.toImage();
+
+    AreaDetector detector(Qt::black, 354, 50);
+    if(!detector.detect(img, area, qrCode))
+    {
+        img.save("ok.png");
+        return QImage();
+    }
+
+    return img;
 }
 
 ReceiveThread::ReceiveThread(const QString& fileName)
@@ -59,19 +68,30 @@ void ReceiveThread::run()
     std::vector<cv::Mat> points;   // qrcode: Retangle, not RotatedBox
     QRect fullScreenRect = qApp->primaryScreen()->virtualGeometry();
     QRect grubRect = fullScreenRect;
+    QRect codeRect;
 
-    auto& pCfgDecoder = *mDecodeThreads.begin();
+    auto &pCfgDecoder = *mDecodeThreads.begin();
     pCfgDecoder->start();
     DecodeTask initTask{0, 0, QRect(0, 0, grubRect.width()*pixelRatio, grubRect.height()*pixelRatio), QImage()};
     while(mIsRunning && !pCfgDecoder->decodeSuccess())
     {
-        initTask.img = grubScreen(grubRect);
+        initTask.img = grubScreen(grubRect, codeRect);
+        if(!initTask.img.isNull())
+        {
+            initTask.area = codeRect;
+            pCfgDecoder->pushTask(initTask);
+            mDecodeSep->acquire(1);
+        }
+        else
+        {
+            grubRect = fullScreenRect;
+        }
 
-        pCfgDecoder->pushTask(initTask);
-        mDecodeSep->acquire(1);
         msleep(5);
     }
 
+//    qDebug() << "grub rect:" << grubRect;
+//    qDebug() << "code rect:" << codeRect;
     if(!mIsRunning)
     {
         pCfgDecoder->stop();
@@ -79,7 +99,7 @@ void ReceiveThread::run()
     }
 
     size_t fileSize = 0;
-    sscanf(mCfgBuffer.data(), "%ld|%d|%d|%d|%d", &fileSize, &mTotalCnt, &mChannelCnt, &mRowCnt, &mColCnt);
+    sscanf(mCfgBuffer.data(), "%lld|%d|%d|%d|%d", &fileSize, &mTotalCnt, &mChannelCnt, &mRowCnt, &mColCnt);
     mOutputFile->resize(fileSize);
     emit acked(0, "0|1");
 
@@ -97,17 +117,30 @@ void ReceiveThread::run()
     QSet<int> prevAcked;
     prevAcked.insert(0);
     int ackedCnt = 1;
+
     while(ackedCnt < (mTotalCnt+1) && mIsRunning)
     {
-        QImage screen = grubScreen(grubRect);
+        QImage screen = grubScreen(grubRect, codeRect);
+        if(screen.isNull())
+        {
+            grubRect = fullScreenRect;
+            msleep(5);
+            continue;
+        }
+//        qDebug() << "grub rect:" << grubRect;
+//        qDebug() << "code rect:" << codeRect;
         int taskCnt = 0;
+        int codeWidth = codeRect.width() / mColCnt;;
+        int codeHeight = codeRect.height() / mRowCnt;
         for(int r = 0; r < mRowCnt; ++r)
         {
             for(int c = 0; c < mColCnt; ++c)
             {
                 for(int channel = 0; channel < mChannelCnt; ++channel, ++taskCnt)
                 {
-                    DecodeTask task{channel, taskCnt, QRect(0, 0, grubRect.width()*pixelRatio, grubRect.height()*pixelRatio), screen};
+                    int x = codeRect.left() + c * codeWidth;
+                    int y = codeRect.top() + r * codeHeight;
+                    DecodeTask task{channel, taskCnt, QRect(x, y, codeWidth, codeHeight), screen};
                     mDecodeThreads[channel]->pushTask(task);
                 }
             }
@@ -130,7 +163,7 @@ void ReceiveThread::run()
                 {
                     if(!prevAcked.contains(ret.syncId))
                     {
-                        qDebug() << "acked:" << ret.syncId;
+//                        qDebug() << "acked:" << ret.syncId;
                         syncIds.insert(ret.syncId);
                         successIdxs.insert(ret.index);
                     }
@@ -158,15 +191,15 @@ void ReceiveThread::run()
 
             for(uint64_t detail : successDetail)
             {
-                if(7 != detail)
-                {
-                    int i = 0;
-                }
+//                if(0 != (detail & (detail+1)))
+//                {
+//                    qDebug() << "has some qrcode decode failed";
+//                }
                 ackDetail.push_back(QString::number(detail));
             }
 
             QString sAckDetail = ackDetail.join("|");
-            qDebug() << ackedCnt << ":" << sAckDetail;
+//            qDebug() << ackedCnt << ":" << sAckDetail;
             ackedCnt += syncIds.size();
             emit acked(ackedCnt, sAckDetail);
             prevAcked.swap(syncIds);
@@ -174,13 +207,13 @@ void ReceiveThread::run()
 
         if(decodedRows.count() == (size_t)mRowCnt && decodedCols.count() == (size_t)mColCnt)
         {
-            qDebug() << "before:" << grubRect;
-            bool grubFullScreen = !dectQRArea(grubRect, areas);
-            if(grubRect == fullScreenRect)
-            {
-                grubFullScreen = !dectQRArea(grubRect, areas);
-            }
-            qDebug() << "after :" << grubRect << ":" << grubFullScreen;
+//            qDebug() << "before:" << grubRect;
+//            bool grubFullScreen = !dectQRArea(grubRect, areas);
+//            if(grubRect == fullScreenRect)
+//            {
+//                grubFullScreen = !dectQRArea(grubRect, areas);
+//            }
+//            qDebug() << "after :" << grubRect << ":" << grubFullScreen;
         }
         else
         {

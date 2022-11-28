@@ -184,6 +184,7 @@ void DecodeThread::run()
         }
         else
         {
+            pChannel.save("fail.png");
             int i = 0;
             ++i;
         }

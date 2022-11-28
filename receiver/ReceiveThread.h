@@ -23,7 +23,7 @@ signals:
     void acked(int ackedCnt, QString detail);
 
 private:
-    QImage grubScreen(QRect& area);
+    QImage grubScreen(QRect& area, QRect& qrCode);
     bool dectQRArea(QRect& grubArea, QList<QRect>& points);
 
     std::unique_ptr<QFile> mOutputFile;
