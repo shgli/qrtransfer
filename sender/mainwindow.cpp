@@ -27,7 +27,8 @@ MainWindow::MainWindow(QWidget *parent)
             ui->mScalar->setEnabled(true);
             ui->mImgCfg->setEnabled(true);
             mIsNormalFinish = false;
-            ui->label->setPixmap(QPixmap::fromImage(mCfgImg));
+            ui->label->setPixmap(QPixmap::fromImage(mCfgImg, Qt::ColorOnly|Qt::ThresholdDither|Qt::ThresholdAlphaDither|Qt::AvoidDither));
+            ui->mProgressBar->setValue(0);
             return;
         }
 
@@ -64,7 +65,7 @@ MainWindow::MainWindow(QWidget *parent)
                     ui->mProgressBar->setRange(0, mTotalCnt-1);
                 }
 
-                ui->label->setPixmap(QPixmap::fromImage(img));
+                ui->label->setPixmap(QPixmap::fromImage(img, Qt::ColorOnly|Qt::ThresholdDither|Qt::ThresholdAlphaDither|Qt::AvoidDither));
                 ui->mProgressBar->setValue(mTotalCnt-seqId);
             });
 

@@ -37,6 +37,7 @@ private:
     const int mImageCnt{1};
     const int mQRCodeCntOneTime{1};
     const int mScalar{1};
+    const int mRetryScalar{2};
     const int mRowCnt{1};
     const int mColCnt{1};
     const int mSpliterWidth{5};
@@ -44,12 +45,13 @@ private:
     int mImageHeight{0};
 
     std::atomic_bool mIsRunning{true};
+    bool mIsRetrying{false};
 
     std::unique_ptr<QFile> mInputFile;
 
     std::deque<std::pair<int32_t, QRcode*>> mPendingCodes;
     std::vector<std::pair<int32_t, QRcode*>> mSendingCodes;
-
+    std::vector<std::pair<int32_t, QRcode*>> delayed;
     int mSequenceId{0};
     std::vector<char> mBuffer;
 

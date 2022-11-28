@@ -3,6 +3,8 @@
 #include <QApplication>
 #include <QPainter>
 #include <QImage>
+#include <random>
+#include <algorithm>
 
 static constexpr size_t MAX_BUFFER_SIZE = 2945;
 static constexpr size_t SEQ_ID_SIZE = 8;
@@ -15,6 +17,7 @@ SendThread::SendThread(const QString& fileName
     ,mImageCnt(imageCnt)
     ,mQRCodeCntOneTime(mPixelChannel*mImageCnt)
     ,mScalar(scalar)
+    ,mRetryScalar(scalar+1)
     ,mRowCnt(1==mImageCnt?1:2)
     ,mColCnt(mImageCnt/mRowCnt+(mImageCnt%mRowCnt>0 ? 1 : 0))
 {
@@ -49,6 +52,7 @@ void SendThread::run()
     mSequenceId = sendCnt;
     int ackedCnt = 0;
     prepareCfgQRCode(sendCnt, fsize);
+    std::random_device rd;
     while (mIsRunning && !mPendingCodes.empty())
     {
         std::pair<QImage, int> imgs = prepareImages();
@@ -60,7 +64,7 @@ void SendThread::run()
         QString strAck = mAckWaiter->wait(QString::number(ackedCnt)+"|");
         if(!mIsRunning) break;
 
-        qDebug() << "acked:" << strAck;
+//        qDebug() << "acked:" << strAck;
         QList<QString> ackList = strAck.split("|");
         if(ackList.size() >= 2)
         {
@@ -76,23 +80,36 @@ void SendThread::run()
                 assert(rcvAcked == ackedCnt);
 
                 auto index = 0;
+                auto thisAckedCnt = 0;
                 for(int iAck = 1; iAck < ackList.size(); ++iAck)
                 {
                     auto successIdx = ackList[iAck].toULongLong();
-                    index = sizeof(successIdx) * (iAck-1);
+                    index = 8*sizeof(successIdx) * (iAck-1);
                     while(successIdx != 0UL)
                     {
+                        auto& sending = mSendingCodes[index];
                         if(0 != (successIdx & 1UL))
                         {
+                            thisAckedCnt++;
                             ackedCnt++;
-                            QRcode_free(mSendingCodes[index].second);
+                            qDebug() << "acked:" << sending.first;
+                            QRcode_free(sending.second);
+                            sending.second = nullptr;
                         }
-                        else
-                        {
-                            mPendingCodes.push_front(mSendingCodes[index]);
-                        }
+
                         successIdx /= 2;
                         index += 1;
+                    }
+                }
+
+                if(thisAckedCnt != mQRCodeCntOneTime)
+                {
+                    for(auto& sending : mSendingCodes)
+                    {
+                        if(sending.second != nullptr)
+                        {
+                            delayed.push_back(sending);
+                        }
                     }
                 }
             }
@@ -123,6 +140,7 @@ void SendThread::prepareCfgQRCode(int totalCnt, size_t fsize)
 
 void SendThread::prepareQRCode( void )
 {
+    mIsRetrying = false;
     while(!mInputFile->atEnd() && mPendingCodes.size() < (size_t)mQRCodeCntOneTime)
     {
         snprintf(mNetSeqId, SEQ_ID_SIZE, "%07d", mSequenceId);
@@ -141,8 +159,13 @@ void SendThread::prepareQRCode( void )
         {
             assert(false);
         }
+    }
 
-
+    while(mPendingCodes.size() < (size_t)mQRCodeCntOneTime && !delayed.empty())
+    {
+        mIsRetrying = true;
+        mPendingCodes.push_back(delayed.back());
+        delayed.pop_back();
     }
 }
 
@@ -155,15 +178,17 @@ std::pair<QImage, int> SendThread::prepareImages( void )
 
     mSendingCodes.clear();
     int baseSeqId = 2000000000;
-    QImage ret(mImageWidth, mImageHeight, QImage::Format_RGB32);
+    int usedScalar = mIsRetrying ? mRetryScalar : mScalar;
+    int imageWidth = mImageWidth*usedScalar/mScalar;
+    QImage ret(imageWidth, imageWidth, QImage::Format_RGB32);
     QPainter painter(&ret);
-    painter.fillRect(0, 0, mImageWidth, mImageHeight, Qt::white);//背景填充白色
+    painter.fillRect(0, 0, imageWidth, imageWidth, Qt::white);//背景填充白色
     painter.setPen(Qt::NoPen);
     for(int iImg = 0; iImg < mImageCnt && !mPendingCodes.empty(); ++iImg)
     {
         std::pair<int,QRcode*> first = mPendingCodes.front(); mPendingCodes.pop_front();
         mSendingCodes.push_back(first);
-
+        qDebug() << "sending:" << first.first;
         baseSeqId = std::min(baseSeqId, first.first);
         std::pair<int,QRcode*> second{0, nullptr};
         if(mPixelChannel >= 2 && !mPendingCodes.empty())
@@ -171,6 +196,7 @@ std::pair<QImage, int> SendThread::prepareImages( void )
             second = mPendingCodes.front(); mPendingCodes.pop_front();
             mSendingCodes.push_back(second);
             baseSeqId = std::min(baseSeqId, second.first);
+            qDebug() << "sending:" << second.first;
         }
         std::pair<int,QRcode*> third{0, nullptr};
         if(mPixelChannel >= 3 && !mPendingCodes.empty())
@@ -178,13 +204,14 @@ std::pair<QImage, int> SendThread::prepareImages( void )
             third = mPendingCodes.front(); mPendingCodes.pop_front();
             mSendingCodes.push_back(third);
             baseSeqId = std::min(baseSeqId, third.first);
+            qDebug() << "sending:" << third.first;
         }
 
         QRcode* qr = first.second;
         int iRow = iImg/mColCnt;
         int iCol = iImg%mColCnt;
-        int iX = iCol*(qr->width*mScalar + mSpliterWidth*mScalar);
-        int iY = iRow*(qr->width*mScalar + mSpliterWidth*mScalar);
+        int iX = iCol*(qr->width + mSpliterWidth)*usedScalar;
+        int iY = iRow*(qr->width + mSpliterWidth)*usedScalar;
         if (qr && qr->width > 0)
         {
             for (int y = 0; y < qr->width; y++) //行
@@ -197,10 +224,10 @@ std::pair<QImage, int> SendThread::prepareImages( void )
                     QColor clr(red, green, blue);
                     painter.setBrush(clr);
 
-                    QRect r(iX+x * mScalar
-                            , iY+y * mScalar
-                            , mScalar
-                            , mScalar);
+                    QRect r(iX+x * usedScalar
+                            , iY+y * usedScalar
+                            , usedScalar
+                            , usedScalar);
                     painter.drawRect(r);
                 }
             }

@@ -130,6 +130,7 @@ void ReceiveThread::run()
                 {
                     if(!prevAcked.contains(ret.syncId))
                     {
+                        qDebug() << "acked:" << ret.syncId;
                         syncIds.insert(ret.syncId);
                         successIdxs.insert(ret.index);
                     }
@@ -157,6 +158,10 @@ void ReceiveThread::run()
 
             for(uint64_t detail : successDetail)
             {
+                if(7 != detail)
+                {
+                    int i = 0;
+                }
                 ackDetail.push_back(QString::number(detail));
             }
 

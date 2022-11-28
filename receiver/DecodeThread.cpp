@@ -140,7 +140,12 @@ void DecodeThread::run()
         QImage pChannel = chopTaskImg(task);
         cv::Mat  cvImg = ASM::QImageToCvMat(pChannel);
         std::vector<cv::Mat> points;
-        auto res = detector.detectAndDecode(cvImg, points);
+        std::vector<std::string> res;
+        try {
+            res = detector.detectAndDecode(cvImg, points);
+        } catch (const std::exception& e) {
+            qDebug() << "decode exception: channel:" << task.channel << " index:" << task.index << ", msg:" << e.what();
+        }
 
         if(res.size() > 0)
         {
@@ -176,6 +181,11 @@ void DecodeThread::run()
             }
 
             mResults.push_back(ret);
+        }
+        else
+        {
+            int i = 0;
+            ++i;
         }
 
         mFinishNotifier->release(1);
