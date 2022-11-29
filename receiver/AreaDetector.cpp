@@ -8,7 +8,7 @@ AreaDetector::AreaDetector(QColor borderClr
 ,mDistThreshold(distThres)
 {}
 
-bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode)
+bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode, QSize& offset)
 {
     for(int y = mMinSize-1; y < img.height(); y += mMinSize)
     {
@@ -57,7 +57,7 @@ bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode)
                                 int grubSize = len+prev->len+2*PIXEL_RATIO;
                                 rcGrub = QRect(rcGrub.left()+_C(grubLeft), rcGrub.top() + _C(grubTop), _C(grubSize), _C(grubSize));
                                 rcQRcode = QRect(x+1, grubTop+PIXEL_RATIO, len, len);
-
+                                offset = QSize(rcQRcode.left()-grubLeft, rcQRcode.top()-grubTop);
                                 return true;
                             }
                         }

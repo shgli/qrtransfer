@@ -185,8 +185,9 @@ std::pair<QImage, int> SendThread::prepareImages( void )
     int imageWidth = mImageWidth*usedScalar/mScalar; int imageHeight=imageWidth;
     QImage ret(imageWidth+borderWidth, imageHeight+borderWidth, QImage::Format_RGB32);
     QPainter painter(&ret);
-    painter.fillRect(borderWidth, 0, imageWidth, imageHeight, Qt::white);//背景填充白色
-    painter.fillRect(0, imageHeight, borderWidth, borderWidth, Qt::white);
+    painter.fillRect(0, 0, ret.width(), ret.height(), Qt::white);//背景填充白色
+    painter.fillRect(0, 0, borderWidth, imageHeight, Qt::black);
+    painter.fillRect(borderWidth, imageHeight, imageWidth, borderWidth, Qt::black);
     painter.setPen(Qt::NoPen);
 
     for(int iImg = 0; iImg < mImageCnt && !mPendingCodes.empty(); ++iImg)

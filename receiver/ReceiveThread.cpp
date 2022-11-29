@@ -5,7 +5,7 @@
 #include <bitset>
 #include "AreaDetector.h"
 
-QImage ReceiveThread::grubScreen(QRect& area, QRect& qrCode)
+QImage ReceiveThread::grubScreen(QRect& area, QRect& qrCode, QSize& offset)
 {
     QScreen* pScreen = QApplication::primaryScreen();
 
@@ -13,10 +13,16 @@ QImage ReceiveThread::grubScreen(QRect& area, QRect& qrCode)
     QImage img = full.toImage();
 
     AreaDetector detector(Qt::black, 354, 50);
-    if(!detector.detect(img, area, qrCode))
+    bool isFull = 0 == area.top() && 0 == area.left() ;
+    if(isFull && !detector.detect(img, area, qrCode, offset))
     {
-        img.save("ok.png");
+//        img.save("ok.png");
         return QImage();
+    }
+
+    if(!isFull)
+    {
+        qrCode.moveTo(offset.width(), offset.height());
     }
 
     return img;
@@ -69,13 +75,14 @@ void ReceiveThread::run()
     QRect fullScreenRect = qApp->primaryScreen()->virtualGeometry();
     QRect grubRect = fullScreenRect;
     QRect codeRect;
+    QSize offset;
 
     auto &pCfgDecoder = *mDecodeThreads.begin();
     pCfgDecoder->start();
     DecodeTask initTask{0, 0, QRect(0, 0, grubRect.width()*pixelRatio, grubRect.height()*pixelRatio), QImage()};
     while(mIsRunning && !pCfgDecoder->decodeSuccess())
     {
-        initTask.img = grubScreen(grubRect, codeRect);
+        initTask.img = grubScreen(grubRect, codeRect, offset);
         if(!initTask.img.isNull())
         {
             initTask.area = codeRect;
@@ -117,13 +124,14 @@ void ReceiveThread::run()
     QSet<int> prevAcked;
     prevAcked.insert(0);
     int ackedCnt = 1;
-
+    bool isGrubFullScreen = false;
     while(ackedCnt < (mTotalCnt+1) && mIsRunning)
     {
-        QImage screen = grubScreen(grubRect, codeRect);
+        QImage screen = grubScreen(grubRect, codeRect, offset);
         if(screen.isNull())
         {
             grubRect = fullScreenRect;
+            isGrubFullScreen = true;
             msleep(5);
             continue;
         }
@@ -178,7 +186,7 @@ void ReceiveThread::run()
             pDecoder->results().clear();
         }
 
-        if(!syncIds.empty())
+        if(!syncIds.empty() || (areas.empty() && isGrubFullScreen))
         {
             QStringList ackDetail;
             ackDetail.push_back(QString::number(ackedCnt));
@@ -199,10 +207,13 @@ void ReceiveThread::run()
             }
 
             QString sAckDetail = ackDetail.join("|");
-//            qDebug() << ackedCnt << ":" << sAckDetail;
+//            qDebug() << "acked:" << ackedCnt << ":" << sAckDetail;
             ackedCnt += syncIds.size();
             emit acked(ackedCnt, sAckDetail);
-            prevAcked.swap(syncIds);
+            if(!syncIds.empty())
+            {
+                prevAcked.swap(syncIds);
+            }
         }
 
         if(decodedRows.count() == (size_t)mRowCnt && decodedCols.count() == (size_t)mColCnt)
@@ -214,10 +225,12 @@ void ReceiveThread::run()
 //                grubFullScreen = !dectQRArea(grubRect, areas);
 //            }
 //            qDebug() << "after :" << grubRect << ":" << grubFullScreen;
+            isGrubFullScreen = false;
         }
         else
         {
             grubRect = fullScreenRect;
+            isGrubFullScreen = true;
         }
 
         msleep(5);

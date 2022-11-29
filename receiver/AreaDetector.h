@@ -7,7 +7,7 @@ class AreaDetector
 {
 public:
     AreaDetector(QColor borderClr, int minSize, int distThres);
-    bool detect(QImage img, QRect& rcGrub, QRect& rcQRcode);
+    bool detect(QImage img, QRect& rcGrub, QRect& rcQRcode, QSize& offset);
 
 private:
     bool IsWhite(QColor clr);
