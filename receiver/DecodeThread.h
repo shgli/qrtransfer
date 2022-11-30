@@ -20,8 +20,9 @@ struct DecodeTask
 
 struct DecodeResult
 {
-    int index;
-    int syncId;
+    uint index;
+    qint64 offset;
+    qint64 len;
     QRect area;
 };
 
@@ -30,11 +31,11 @@ class DecodeThread: public QThread
     Q_OBJECT
 
 public:
-   DecodeThread(int totalCnt
+   DecodeThread(qint64 fileSize
                 , QSemaphore* finishNotifier
                 , char* pFile);
 
-   void reInitialize(int totalCnt
+   void reInitialize(qint64 fileSize
                      , QSemaphore* finishNotifier
                      , char* pFile);
    void pushTask(const DecodeTask& task);
@@ -47,13 +48,11 @@ public:
    auto& results() { return mResults; }
 
    static size_t seqenceIdSize();
-   static size_t maxDataSize();
-   static size_t maxBufferSize();
 
 private:
    QImage chopTaskImg(DecodeTask& task);
 
-   int mTotalCnt;
+   qint64 mFileSize;
    QSemaphore* mFinishNotifier;
    char* mOutFile;
 

@@ -47,13 +47,23 @@ MainWindow::MainWindow(QWidget *parent)
 #else
             pAckWaiter = std::make_unique<WatchClipboardAck>();
 #endif
-
             int scalar = ui->mScalar->text().toInt();
             QString imgCfg = ui->mImgCfg->text();
             QList<QString> imgCfgs = imgCfg.split('x');
-            int imgCnt = imgCfgs[0].toInt();
-            int pixelChannelCnt = imgCfgs[1].toInt();
-            mSender = std::make_unique<SendThread>(transferFileName, std::move(pAckWaiter), scalar, pixelChannelCnt, imgCnt);
+            int rows = 1, cols = 1, pixelChannels = 3;
+            if(3 == imgCfgs.size())
+            {
+                rows = imgCfgs[0].toInt();
+                cols = imgCfgs[1].toInt();
+                pixelChannels = imgCfgs[2].toInt();
+            }
+            else
+            {
+                rows = imgCfgs[0].toInt();
+                cols = imgCfgs[1].toInt();
+            }
+
+            mSender = std::make_unique<SendThread>(transferFileName, std::move(pAckWaiter), scalar, rows, cols, pixelChannels);
             mTotalCnt = 0;
             ui->mProgressBar->setValue(0);
             mIsNormalFinish = true;

@@ -25,6 +25,6 @@ private:
     Ui::MainWindow *ui;
 
     std::unique_ptr<ReceiveThread> mReceiver;
-    int mTotalCnt = 0;
+    qint64 mFileSize = 0;
 };
 #endif // MAINWINDOW_H

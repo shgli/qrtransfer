@@ -5,7 +5,7 @@
 #include <bitset>
 #include "AreaDetector.h"
 
-QImage ReceiveThread::grubScreen(QRect& area, QRect& qrCode, QSize& offset)
+QImage ReceiveThread::grubScreen(QRect& area, QRect& qrCode, QPoint& offset, QPoint& idClrPos, QColor& idClr)
 {
     QScreen* pScreen = QApplication::primaryScreen();
 
@@ -13,17 +13,27 @@ QImage ReceiveThread::grubScreen(QRect& area, QRect& qrCode, QSize& offset)
     QImage img = full.toImage();
 
     AreaDetector detector(Qt::black, 354, 50);
-    bool isFull = 0 == area.top() && 0 == area.left() ;
-    if(isFull && !detector.detect(img, area, qrCode, offset))
+    bool isFull = 0 == area.top() && 0 == area.left();
+    idClr = Qt::white;
+    if(!isFull)
+    {
+        qrCode.moveTo(offset);
+        QPoint idPos = idClrPos + qrCode.bottomLeft();
+        idClr = img.pixelColor(idPos);
+
+        if(!detector.IsIdentityColor(idClr))
+        {
+            return QImage();
+        }
+    }
+
+    if((isFull && !detector.detect(img, area, qrCode, offset, idClrPos, idClr)))
     {
 //        img.save("ok.png");
         return QImage();
     }
 
-    if(!isFull)
-    {
-        qrCode.moveTo(offset.width(), offset.height());
-    }
+
 
     return img;
 }
@@ -34,7 +44,7 @@ ReceiveThread::ReceiveThread(const QString& fileName)
     mOutputFile->open(QIODevice::ReadWrite);
 
 
-    mCfgBuffer.resize(DecodeThread::maxBufferSize());
+    mCfgBuffer.resize(1024);
     mDecodeSep = std::make_unique<QSemaphore>(0);
     mDecodeThreads.push_back(std::make_unique<DecodeThread>(0, mDecodeSep.get(), mCfgBuffer.data()));
 }
@@ -68,6 +78,7 @@ void ReceiveThread::stop()
     mDecodeThreads.clear();
 }
 
+
 void ReceiveThread::run()
 {
     static qreal pixelRatio = qApp->primaryScreen()->devicePixelRatio();
@@ -75,14 +86,14 @@ void ReceiveThread::run()
     QRect fullScreenRect = qApp->primaryScreen()->virtualGeometry();
     QRect grubRect = fullScreenRect;
     QRect codeRect;
-    QSize offset;
-
+    QPoint offset, idOffset;
+    QColor identityClr = Qt::white;
     auto &pCfgDecoder = *mDecodeThreads.begin();
     pCfgDecoder->start();
     DecodeTask initTask{0, 0, QRect(0, 0, grubRect.width()*pixelRatio, grubRect.height()*pixelRatio), QImage()};
     while(mIsRunning && !pCfgDecoder->decodeSuccess())
     {
-        initTask.img = grubScreen(grubRect, codeRect, offset);
+        initTask.img = grubScreen(grubRect, codeRect, offset, idOffset, identityClr);
         if(!initTask.img.isNull())
         {
             initTask.area = codeRect;
@@ -105,29 +116,30 @@ void ReceiveThread::run()
         return;
     }
 
-    size_t fileSize = 0;
-    sscanf(mCfgBuffer.data(), "%lld|%d|%d|%d|%d", &fileSize, &mTotalCnt, &mChannelCnt, &mRowCnt, &mColCnt);
-    mOutputFile->resize(fileSize);
-    emit acked(0, "0|1");
+    sscanf(mCfgBuffer.data(), "%lld|%d|%d|%d", &mFileSize, &mChannelCnt, &mRowCnt, &mColCnt);
+    mOutputFile->resize(mFileSize);
+    emit acked(-1, "-1|1");
 
     pCfgDecoder->results().clear();
-    char* pFileData = (char*)mOutputFile->map(0, fileSize);
+    char* pFileData = (char*)mOutputFile->map(0, mFileSize);
     mDecodeSep = std::make_unique<QSemaphore>(0);
-    pCfgDecoder->reInitialize(mTotalCnt, mDecodeSep.get(), pFileData);
+    pCfgDecoder->reInitialize(mFileSize, mDecodeSep.get(), pFileData);
 
     for(int channel = 1; channel < mChannelCnt; ++channel)
     {
-        mDecodeThreads.push_back(std::make_unique<DecodeThread>(mTotalCnt, mDecodeSep.get(), pFileData));
+        mDecodeThreads.push_back(std::make_unique<DecodeThread>(mFileSize, mDecodeSep.get(), pFileData));
         mDecodeThreads[channel]->start();
     }
 
-    QSet<int> prevAcked;
-    prevAcked.insert(0);
-    int ackedCnt = 1;
+    QSet<uint> prevRecved;
+    prevRecved.insert(-1);
+    qint64 recvedLen = 0;
     bool isGrubFullScreen = false;
-    while(ackedCnt < (mTotalCnt+1) && mIsRunning)
+    int continusFailedCnt = 0;
+    QColor prevIdentityClr = Qt::green;
+    while(recvedLen < mFileSize && mIsRunning)
     {
-        QImage screen = grubScreen(grubRect, codeRect, offset);
+        QImage screen = grubScreen(grubRect, codeRect, offset, idOffset, identityClr);
         if(screen.isNull())
         {
             grubRect = fullScreenRect;
@@ -135,6 +147,14 @@ void ReceiveThread::run()
             msleep(5);
             continue;
         }
+
+        if(AreaDetector::IsColor(prevIdentityClr, identityClr, 20))
+        {
+            msleep(5);
+            continue;
+        }
+
+        prevIdentityClr = identityClr;
 //        qDebug() << "grub rect:" << grubRect;
 //        qDebug() << "code rect:" << codeRect;
         int taskCnt = 0;
@@ -157,10 +177,10 @@ void ReceiveThread::run()
         mDecodeSep->acquire(taskCnt);
         if(!mIsRunning) break;
 
-        QSet<int> syncIds;
-        QSet<int> successIdxs;
+        QSet<uint> offsets;
+        QSet<uint> successIdxs;
         QList<QRect> areas;
-
+        qint64 thisRecvLen = 0;
         std::bitset<64> decodedRows, decodedCols;
         for(int channel = 0; channel < mChannelCnt; ++channel)
         {
@@ -169,11 +189,16 @@ void ReceiveThread::run()
             {
                 for(auto& ret : pDecoder->results())
                 {
-                    if(!prevAcked.contains(ret.syncId))
+                    if(!prevRecved.contains(ret.offset) && 0 != ret.len)
                     {
-//                        qDebug() << "acked:" << ret.syncId;
-                        syncIds.insert(ret.syncId);
+//                        qDebug() << "acked offset:" << ret.offset << ",len:" << ret.len << ", rcv len:" << recvedLen;
+                        offsets.insert(ret.offset);
                         successIdxs.insert(ret.index);
+                        thisRecvLen += ret.len;
+                    }
+                    else
+                    {
+//                        assert(false);
                     }
                     areas.push_back(ret.area);
                     int row = ret.index/mChannelCnt/mColCnt;
@@ -186,10 +211,14 @@ void ReceiveThread::run()
             pDecoder->results().clear();
         }
 
-        if(!syncIds.empty() || (areas.empty() && isGrubFullScreen))
+
+
+        bool needNofifyFailed = areas.empty();
+        if(!offsets.empty() || needNofifyFailed)
         {
+
             QStringList ackDetail;
-            ackDetail.push_back(QString::number(ackedCnt));
+            ackDetail.push_back(QString::number(recvedLen));
 
             std::vector<uint64_t> successDetail(taskCnt/64+((0 != (taskCnt%64)) ? 1 : 0), 0UL);
             for(auto susIdx : successIdxs)
@@ -206,13 +235,20 @@ void ReceiveThread::run()
                 ackDetail.push_back(QString::number(detail));
             }
 
-            QString sAckDetail = ackDetail.join("|");
-//            qDebug() << "acked:" << ackedCnt << ":" << sAckDetail;
-            ackedCnt += syncIds.size();
-            emit acked(ackedCnt, sAckDetail);
-            if(!syncIds.empty())
+            if(needNofifyFailed)
             {
-                prevAcked.swap(syncIds);
+                ackDetail.push_back("N"+QString::number(continusFailedCnt));
+                continusFailedCnt += 1;
+            }
+
+            QString sAckDetail = ackDetail.join("|");
+//            qDebug() << "acked rcv len:" << recvedLen << ":" << sAckDetail << ", identityColor:" << identityClr;
+            recvedLen += thisRecvLen;
+            emit acked(recvedLen, sAckDetail);
+            if(!offsets.empty())
+            {
+                prevRecved.swap(offsets);
+                continusFailedCnt = 0;
             }
         }
 

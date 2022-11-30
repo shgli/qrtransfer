@@ -47,6 +47,13 @@
      </layout>
     </item>
     <item>
+     <widget class="QLabel" name="Tips">
+      <property name="text">
+       <string>传输过程中，如果因为使用剪切板，导致传输中断，请复制[]里面的内容</string>
+      </property>
+     </widget>
+    </item>
+    <item>
      <widget class="QProgressBar" name="mProcessBar">
       <property name="value">
        <number>0</number>

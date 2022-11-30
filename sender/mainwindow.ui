@@ -43,14 +43,14 @@
       <item>
        <widget class="QLineEdit" name="mImgCfg">
         <property name="text">
-         <string>1x3</string>
+         <string>2x2</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QLineEdit" name="mScalar">
         <property name="text">
-         <string>2</string>
+         <string>1</string>
         </property>
         <property name="maxLength">
          <number>10</number>

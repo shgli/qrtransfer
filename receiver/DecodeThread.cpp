@@ -16,8 +16,8 @@
 #include "opencv2/wechat_qrcode.hpp"
 #include <QDir>
 #include <QApplication>
-static constexpr size_t MAX_BUFFER_SIZE = 2945;
-static constexpr size_t SEQ_ID_SIZE = 8;
+
+static constexpr size_t SEQ_ID_SIZE = 11;
 #if USING_ZXING
 std::string decodeByZXing(cv::Mat& matSrc)
 {
@@ -45,13 +45,11 @@ std::string decodeByZXing(cv::Mat& matSrc)
 #endif
 
 size_t DecodeThread::seqenceIdSize() { return SEQ_ID_SIZE; }
-size_t DecodeThread::maxDataSize() { return MAX_BUFFER_SIZE; }
-size_t DecodeThread::maxBufferSize() { return seqenceIdSize()+maxDataSize(); }
 
-DecodeThread::DecodeThread(int totalCnt
+DecodeThread::DecodeThread(qint64 fileSize
                            , QSemaphore* finishNotifier
                            , char* pFile)
-    :mTotalCnt(totalCnt)
+    :mFileSize(fileSize)
     ,mFinishNotifier(finishNotifier)
     ,mOutFile(pFile)
 {
@@ -61,11 +59,11 @@ DecodeThread::DecodeThread(int totalCnt
     }
 }
 
-void DecodeThread::reInitialize(int totalCnt
+void DecodeThread::reInitialize(qint64 fileSize
                   , QSemaphore* finishNotifier
                   , char* pFile)
 {
-    mTotalCnt = totalCnt;
+    mFileSize = fileSize;
     mFinishNotifier = finishNotifier;
     mOutFile = pFile;
 }
@@ -138,7 +136,7 @@ void DecodeThread::run()
         }
 
         QImage pChannel = chopTaskImg(task);
-        cv::Mat  cvImg = ASM::QImageToCvMat(pChannel);
+        cv::Mat  cvImg = ASM::QImageToCvMat(pChannel, false);
         std::vector<cv::Mat> points;
         std::vector<std::string> res;
         try {
@@ -154,17 +152,24 @@ void DecodeThread::run()
             ret.index = task.index;
             std::string& received = res[0];
             {
-                char* szSyncId = received.data();
-                szSyncId[SEQ_ID_SIZE-1] = '\0';
+                char* szoffset = received.data();
+                szoffset[SEQ_ID_SIZE-1] = '\0';
 
-                auto syncId  = atoi(szSyncId);
+                qint64 offset  = atol(szoffset);
                 const char* data = &received[SEQ_ID_SIZE];
-                if(0 != syncId || mTotalCnt == 0)
+
+                bool isCfg = -1 == offset;
+                ret.offset = isCfg ? 0L : offset;
+                if((0 == mFileSize && !isCfg) || (isCfg && 0 != mFileSize))
                 {
-                    char* dst = mOutFile+(mTotalCnt-syncId)*MAX_BUFFER_SIZE;
-                    memcpy(dst, data, received.size()-SEQ_ID_SIZE);
+                    ret.len = 0;
                 }
-                ret.syncId = syncId;
+                else
+                {
+                    char* dst = mOutFile+ret.offset ;
+                    ret.len = received.size()-SEQ_ID_SIZE;
+                    memcpy(dst, data, ret.len);
+                }
             }
 
             auto& p = points[0];

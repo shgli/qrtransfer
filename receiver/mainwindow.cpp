@@ -45,19 +45,19 @@ MainWindow::MainWindow(QWidget *parent)
             ui->mFileName->setText(fileName);
             mReceiver = std::make_unique<ReceiveThread>(fileName);
             ui->mProcessBar->setValue(0);
-            mTotalCnt = 0;
-            connect(mReceiver.get(), &ReceiveThread::acked, this, [this](int ackedCnt, QString detail)
+            mFileSize = 0;
+            connect(mReceiver.get(), &ReceiveThread::acked, this, [this](qint64 recvedLen, QString detail)
             {
-                if(0 == ackedCnt)
+                if(-1 == recvedLen)
                 {
-                    mTotalCnt = mReceiver->getTotalCnt();
-                    ui->mProcessBar->setRange(0, mTotalCnt+1);
+                    mFileSize = mReceiver->getFileSize();
+                    ui->mProcessBar->setRange(0, mFileSize);
                 }
 
-                ui->mProcessBar->setValue(ackedCnt);
+                ui->mProcessBar->setValue(recvedLen);
 
                 QApplication::clipboard()->setText(detail);
-                QString detailLabel=QString::asprintf("%05d[", mTotalCnt+1-ackedCnt);
+                QString detailLabel=QString::asprintf("%05d[", mFileSize+1-recvedLen);
                 detailLabel += detail +"]";
                 ui->mAckNum->setText(detailLabel);
                 QApplication::clipboard()->text();

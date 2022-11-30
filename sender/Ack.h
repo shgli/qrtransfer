@@ -62,6 +62,7 @@ protected:
     void doStop( void ) override;
 
     int32_t mSleepMS;
+    QString mPrevAckText;
 };
 
 class WatchKeyEventAck: public IAck

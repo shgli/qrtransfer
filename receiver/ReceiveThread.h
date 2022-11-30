@@ -18,12 +18,13 @@ public:
 
     void stop();
 
-    int getTotalCnt() const { return mTotalCnt; }
+    qint64 getFileSize() const { return mFileSize; }
 signals:
-    void acked(int ackedCnt, QString detail);
+    void acked(qint64 ackedCnt, QString detail);
 
 private:
-    QImage grubScreen(QRect& area, QRect& qrCode, QSize& offset);
+    QImage grubScreen(QRect& area, QRect& qrCode, QPoint& offset, QPoint& idPos, QColor& idClr);
+
     bool dectQRArea(QRect& grubArea, QList<QRect>& points);
 
     std::unique_ptr<QFile> mOutputFile;
@@ -33,10 +34,10 @@ private:
     std::unique_ptr<QSemaphore> mDecodeSep;
     std::vector<char> mCfgBuffer;
 
-    int mTotalCnt;
     int mRowCnt;
     int mColCnt;
     int mChannelCnt;
+    qint64 mFileSize;
 };
 
 

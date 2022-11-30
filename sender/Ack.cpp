@@ -58,10 +58,11 @@ QString PollClipboardAck::doWait()
     while(mIsRunning && !isOK)
     {
         text = pClipboard->text();
-        isOK = text.startsWith(mAckPrefix);
+        isOK = text.startsWith(mAckPrefix) && mPrevAckText != text;
         QThread::msleep(mSleepMS);
     }
 
+    mPrevAckText = text;
     return text;
 }
 

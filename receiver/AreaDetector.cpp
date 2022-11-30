@@ -8,7 +8,7 @@ AreaDetector::AreaDetector(QColor borderClr
 ,mDistThreshold(distThres)
 {}
 
-bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode, QSize& offset)
+bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode, QPoint& offset, QPoint& idClrPos, QColor& idClr)
 {
     for(int y = mMinSize-1; y < img.height(); y += mMinSize)
     {
@@ -38,10 +38,10 @@ bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode, QSize& off
 
                     if(len >= mMinSize)
                     {
-                        if(IsCorner(img, prev->x, bottom, prev->len))
+                        if(IsCorner(img, prev->x, bottom, prev->len, idClr))
                         {
                             int hlen = DetectHLine(img, x, bottom, prev->len);
-                            if(std::abs(hlen-len)*50 < std::min(hlen,len))
+                            //if(std::abs(hlen-len)*50 < std::min(hlen,len))
                             {
                                 static const qreal pixelRatio = qApp->devicePixelRatio();
                                 static const int PIXEL_RATIO = std::ceil(pixelRatio);
@@ -50,14 +50,18 @@ bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode, QSize& off
                                   return int(c/pixelRatio+0.5);
                                 };
 
-                                len = std::max(hlen, len);
-                                len += 2;
+//                                len = std::max(hlen, len);
+//                                len += 2;
                                 int grubLeft = prev->x-PIXEL_RATIO;
                                 int grubTop = bottom-len-PIXEL_RATIO;
-                                int grubSize = len+prev->len+2*PIXEL_RATIO;
-                                rcGrub = QRect(rcGrub.left()+_C(grubLeft), rcGrub.top() + _C(grubTop), _C(grubSize), _C(grubSize));
-                                rcQRcode = QRect(x+1, grubTop+PIXEL_RATIO, len, len);
-                                offset = QSize(rcQRcode.left()-grubLeft, rcQRcode.top()-grubTop);
+                                int grubWidth = hlen+prev->len+2*PIXEL_RATIO;
+                                int grubHeight = len+prev->len+2*PIXEL_RATIO;
+                                rcGrub = QRect(rcGrub.left()+_C(grubLeft), rcGrub.top() + _C(grubTop), _C(grubWidth), _C(grubHeight));
+                                rcQRcode = QRect(x+1, grubTop+PIXEL_RATIO, hlen, len);
+                                offset = QPoint(rcQRcode.left()-grubLeft, rcQRcode.top()-grubTop);
+
+                                QRect idRect{prev->x, bottom, prev->len, prev->len};
+                                idClrPos = idRect.center() - rcQRcode.bottomLeft();
                                 return true;
                             }
                         }
@@ -93,25 +97,37 @@ bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode, QSize& off
     return false;
 }
 
-bool AreaDetector::IsColor(QColor r1, QColor r2)
+bool AreaDetector::IsColor(QColor r1, QColor r2, int threshold)
 {
-    return (std::abs(r1.red()-r2.red()) < mDistThreshold)
-            && std::abs(r1.green()-r2.green()) < mDistThreshold
-            && std::abs(r1.blue()-r2.blue()) < mDistThreshold;
+    return (std::abs(r1.red()-r2.red()) < threshold)
+            && std::abs(r1.green()-r2.green()) < threshold
+            && std::abs(r1.blue()-r2.blue()) < threshold;
 }
 
 bool AreaDetector::IsWhite(QColor clr)
 {
-    return (std::abs(clr.red()-clr.green())-std::abs(clr.red()-clr.blue())) < 20 && IsColor(Qt::white, clr);
+    return (std::abs(clr.red()-clr.green())-std::abs(clr.red()-clr.blue())) < 20 && IsColor(Qt::white, clr, mDistThreshold);
 }
 
 bool AreaDetector::IsBorder(QColor clr)
 {
-    return (std::abs(clr.red()-clr.green())-std::abs(clr.red()-clr.blue())) < 20 &&IsColor(mBorderClr, clr);
+    return (std::abs(clr.red()-clr.green())-std::abs(clr.red()-clr.blue())) < 20 &&IsColor(mBorderClr, clr, mDistThreshold);
 }
 
-bool AreaDetector::IsCorner(const QImage& img, int x, int y, int w)
+
+bool AreaDetector::IsIdentityColor(QColor clr)
 {
+    return AreaDetector::IsColor(clr, Qt::green, 50) || AreaDetector::IsColor(clr, Qt::red, 50);
+}
+
+bool AreaDetector::IsCorner(const QImage& img, int x, int y, int w, QColor& idClr)
+{
+    idClr = img.pixelColor(x, y);
+    if(!IsIdentityColor(idClr))
+    {
+        return false;
+    }
+
     int right = x + w - 1;
     int bottom = y + w - 1;
     for(int xx = x; xx <= right; ++xx)
@@ -122,7 +138,7 @@ bool AreaDetector::IsCorner(const QImage& img, int x, int y, int w)
 //            int red = clr.red();
 //            int green = clr.green();
 //            int blue = clr.blue();
-            if(!IsWhite(clr))
+            if(!IsColor(clr, idClr, mDistThreshold))
             {
                 return false;
             }

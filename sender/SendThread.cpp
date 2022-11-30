@@ -6,28 +6,30 @@
 #include <random>
 #include <algorithm>
 
-static constexpr size_t MAX_BUFFER_SIZE = 2945;
-static constexpr size_t SEQ_ID_SIZE = 8;
+static constexpr qint64 MAX_BUFFER_SIZE = 2942;
+static constexpr qint64 SEQ_ID_SIZE = 11;
 SendThread::SendThread(const QString& fileName
                        , std::unique_ptr<IAck>&& pAckWaiter
                        , int scalar
+                       , int rows
+                       , int cols
                        , int pixelChannel
-                       , int imageCnt)
+                       )
     :mPixelChannel(pixelChannel)
-    ,mImageCnt(imageCnt)
-    ,mQRCodeCntOneTime(mPixelChannel*mImageCnt)
+    ,mImageCnt(rows*cols)
+    ,mQRCodeCntOneTime(mPixelChannel*rows*cols)
     ,mScalar(scalar)
     ,mRetryScalar(scalar+1)
-    ,mRowCnt(1==mImageCnt?1:2)
-    ,mColCnt(mImageCnt/mRowCnt+(mImageCnt%mRowCnt>0 ? 1 : 0))
+    ,mRowCnt(rows)
+    ,mColCnt(cols)
 {
     mAckWaiter = std::move(pAckWaiter);
-    mBuffer.reserve(SEQ_ID_SIZE+MAX_BUFFER_SIZE);
-    mBuffer.resize(SEQ_ID_SIZE+MAX_BUFFER_SIZE);
-    mNetSeqId = mBuffer.data();
-    mData = &(mBuffer[SEQ_ID_SIZE]);
+//    mBuffer.reserve(SEQ_ID_SIZE+MAX_BUFFER_SIZE);
+//    mBuffer.resize(SEQ_ID_SIZE+MAX_BUFFER_SIZE);
+    mNetSeqId = new char[SEQ_ID_SIZE];
     mInputFile = std::make_unique<QFile>(fileName, nullptr);
     mInputFile->open(QIODevice::ReadOnly);
+    mData = mInputFile->map(0, mInputFile->size());
 }
 
 void SendThread::stop()
@@ -47,40 +49,40 @@ void SendThread::stop()
 
 void SendThread::run()
 {
-    size_t fsize = mInputFile->size();
-    int sendCnt = fsize/MAX_BUFFER_SIZE + ((0 == (fsize%MAX_BUFFER_SIZE)) ? 0 : 1);
-    mSequenceId = sendCnt;
-    int ackedCnt = 0;
-    prepareCfgQRCode(sendCnt, fsize);
+    qint64 fsize = mInputFile->size();
+    mNextReadOffset = 0;
+    qint64 recvedLen = -1;
+    bool isCfgReceived = false;
+    prepareCfgQRCode(fsize);
     std::random_device rd;
-    while (mIsRunning && !mPendingCodes.empty())
+    while (mIsRunning && recvedLen < fsize)
     {
-        std::pair<QImage, int> imgs = prepareImages();
-
-        emit qrReady(imgs.first, sendCnt-ackedCnt+1);
+        QImage imgs = prepareImages(mIdentityClrs[mIdxIdentityClr%2]);
+        ++mIdxIdentityClr;
+        emit qrReady(imgs, fsize-recvedLen);
         yieldCurrentThread();
 
         prepareQRCode();
-        QString strAck = mAckWaiter->wait(QString::number(ackedCnt)+"|");
+        QString strAck = mAckWaiter->wait(QString::number(recvedLen)+"|");
         if(!mIsRunning) break;
 
-//        qDebug() << "acked:" << strAck;
+        qDebug() << "acked:" << strAck;
         QList<QString> ackList = strAck.split("|");
         if(ackList.size() >= 2)
         {
-            if(0 == ackedCnt)
+            if(!isCfgReceived)
             {
-                QRcode_free(mSendingCodes[0].second);
-                ackedCnt++;
+                isCfgReceived = true;
+                recvedLen = 0;
+                QRcode_free(mSendingCodes[0].code);
             }
             else
             {
-                std::vector<std::pair<int, QRcode*>> unacked;
                 int rcvAcked = ackList[0].toInt();
-                assert(rcvAcked == ackedCnt);
+                assert(rcvAcked == recvedLen);
 
                 auto index = 0;
-                auto thisAckedCnt = 0;
+                int thisRecvCnt = 0;
                 for(int iAck = 1; iAck < ackList.size(); ++iAck)
                 {
                     auto successIdx = ackList[iAck].toULongLong();
@@ -90,11 +92,11 @@ void SendThread::run()
                         auto& sending = mSendingCodes[index];
                         if(0 != (successIdx & 1UL))
                         {
-                            thisAckedCnt++;
-                            ackedCnt++;
-//                            qDebug() << "acked:" << sending.first;
-                            QRcode_free(sending.second);
-                            sending.second = nullptr;
+                            thisRecvCnt++;
+                            recvedLen += sending.len;
+                            //qDebug() << "acked offset:" << sending.offset << ", rcv len:" << recvedLen;
+                            QRcode_free(sending.code);
+                            sending.code = nullptr;
                         }
 
                         successIdx /= 2;
@@ -102,13 +104,20 @@ void SendThread::run()
                     }
                 }
 
-                if(thisAckedCnt != mQRCodeCntOneTime)
+                if(thisRecvCnt != mQRCodeCntOneTime)
                 {
                     for(auto& sending : mSendingCodes)
                     {
-                        if(sending.second != nullptr)
+                        if(nullptr != sending.code)
                         {
-                            delayed.push_back(sending);
+                            if(MAX_BUFFER_SIZE == sending.len && (sending.offset+sending.len) < mInputFile->size())
+                            {
+                                splitQRcode(sending.offset, sending.len);
+                            }
+                            else
+                            {
+                                delayed.push_back(sending);
+                            }
                         }
                     }
                 }
@@ -118,47 +127,60 @@ void SendThread::run()
 
     if(mIsRunning)
     {
-        emit qrReady(QImage(), sendCnt-ackedCnt+1);
+        emit qrReady(QImage(), fsize-recvedLen);
     }
     mInputFile->close();
 }
 
-void SendThread::prepareCfgQRCode(int totalCnt, size_t fsize)
+void SendThread::prepareCfgQRCode(size_t fsize)
 {
-    snprintf(mNetSeqId, SEQ_ID_SIZE, "%07d", 0);
-    mNetSeqId[SEQ_ID_SIZE-1] = '|';
-    int size = snprintf(mData, MAX_BUFFER_SIZE, "%ld|%d|%d|%d|%d", fsize, totalCnt, mPixelChannel, mRowCnt, mColCnt);
+    char cfg[64];
+    uint size = snprintf(cfg, MAX_BUFFER_SIZE, "%10d|%ld|%d|%d|%d", -1, fsize, mPixelChannel, mRowCnt, mColCnt);
 
-    QRcode* qr = QRcode_encodeData(size+SEQ_ID_SIZE, (const unsigned char*)mBuffer.data(), 40, QR_ECLEVEL_L);
+    QRcode* qr = QRcode_encodeData(size, (const unsigned char*)cfg, 40, QR_ECLEVEL_L);
     if (qr && qr->width > 0)
     {
         mImageWidth = mColCnt * qr->width*mScalar + mSpliterWidth*mScalar*mColCnt;
         mImageHeight = mRowCnt * qr->width*mScalar + mSpliterWidth*mScalar*mRowCnt;
-        mPendingCodes.push_back(std::make_pair(0, qr));
+        mPendingCodes.push_back({0, size, qr});
     }
+}
+
+int SendThread::createQRcode(qint64 offset, qint64 len)
+{
+    static thread_local char buffer[SEQ_ID_SIZE+MAX_BUFFER_SIZE];
+    static thread_local char* data = buffer+SEQ_ID_SIZE;
+    snprintf(buffer, SEQ_ID_SIZE, "%010d", offset);
+    buffer[SEQ_ID_SIZE-1] = '|';
+
+    qint64 size = std::min(len, mInputFile->size()-offset);
+    memcpy(data, mData+offset, size);
+//    QRinput *pInput = QRinput_new2(40, QR_ECLEVEL_L);
+//    QRinput_append(pInput, QR_MODE_AN, SEQ_ID_SIZE, (uchar*)mNetSeqId);
+//    QRinput_append(pInput, QR_MODE_8, size, mData+offset);
+//    QRcode* qr = QRcode_encodeInput(pInput);
+//    QRinput_free(pInput);
+
+    QRcode* qr = QRcode_encodeData(size+SEQ_ID_SIZE, (const unsigned char*)buffer, 40, QR_ECLEVEL_L);
+    if (qr && qr->width > 0)
+    {
+//            mImageWidth = mColCnt * qr->width*mScalar + mSpliterWidth*mScalar*mColCnt;
+//            mImageHeight = mRowCnt * qr->width*mScalar + mSpliterWidth*mScalar*mRowCnt;
+        mPendingCodes.push_back({offset, size, qr});
+    }
+    else
+    {
+        assert(false);
+    }
+
+    return size;
 }
 
 void SendThread::prepareQRCode( void )
 {
-    mIsRetrying = false;
-    while(!mInputFile->atEnd() && mPendingCodes.size() < (size_t)mQRCodeCntOneTime)
+    while(mNextReadOffset < mInputFile->size() && mPendingCodes.size() < (size_t)mQRCodeCntOneTime)
     {
-        snprintf(mNetSeqId, SEQ_ID_SIZE, "%07d", mSequenceId);
-        mNetSeqId[SEQ_ID_SIZE-1] = '|';
-        auto size = mInputFile->read(mData, MAX_BUFFER_SIZE);
-//        qDebug() << "prepare: " << mSequenceId;
-        QRcode* qr = QRcode_encodeData(size+SEQ_ID_SIZE, (const unsigned char*)mBuffer.data(), 40, QR_ECLEVEL_L);
-        if (qr && qr->width > 0)
-        {
-            mImageWidth = mColCnt * qr->width*mScalar + mSpliterWidth*mScalar*mColCnt;
-            mImageHeight = mRowCnt * qr->width*mScalar + mSpliterWidth*mScalar*mRowCnt;
-            mPendingCodes.push_back(std::make_pair(mSequenceId, qr));
-            --mSequenceId;
-        }
-        else
-        {
-            assert(false);
-        }
+        mNextReadOffset += createQRcode(mNextReadOffset, MAX_BUFFER_SIZE);
     }
 
     while(mPendingCodes.size() < (size_t)mQRCodeCntOneTime && !delayed.empty())
@@ -169,7 +191,14 @@ void SendThread::prepareQRCode( void )
     }
 }
 
-std::pair<QImage, int> SendThread::prepareImages( void )
+void SendThread::splitQRcode(qint64 offset, qint64 len)
+{
+    int len1 = len/2;
+    createQRcode(offset, len1);
+    createQRcode(offset+len1, len-len1);
+}
+
+QImage SendThread::prepareImages(QColor identityClr)
 {
     static auto toValue = [](QRcode* qr, int y, int x)
     {
@@ -178,42 +207,38 @@ std::pair<QImage, int> SendThread::prepareImages( void )
 
     mSendingCodes.clear();
 
-    int baseSeqId = 2000000000;
     int usedScalar = mIsRetrying ? mRetryScalar : mScalar;
     int borderWidth = 2*usedScalar;
     int spliterWidth = mSpliterWidth*usedScalar;
-    int imageWidth = mImageWidth*usedScalar/mScalar; int imageHeight=imageWidth;
+    int imageWidth = mImageWidth*usedScalar/mScalar;
+    int imageHeight= mImageHeight*usedScalar/mScalar;
     QImage ret(imageWidth+borderWidth, imageHeight+borderWidth, QImage::Format_RGB32);
     QPainter painter(&ret);
     painter.fillRect(0, 0, ret.width(), ret.height(), Qt::white);//背景填充白色
-    painter.fillRect(0, 0, borderWidth, imageHeight, Qt::black);
-    painter.fillRect(borderWidth, imageHeight, imageWidth, borderWidth, Qt::black);
+    painter.fillRect(0, 0, borderWidth, imageHeight, Qt::black); //left black line
+    painter.fillRect(borderWidth, imageHeight, imageWidth, borderWidth, Qt::black); //bottom black line
+    painter.fillRect(0, imageHeight, borderWidth, borderWidth, identityClr);
     painter.setPen(Qt::NoPen);
 
     for(int iImg = 0; iImg < mImageCnt && !mPendingCodes.empty(); ++iImg)
     {
-        std::pair<int,QRcode*> first = mPendingCodes.front(); mPendingCodes.pop_front();
+        SendingInfo first = mPendingCodes.front(); mPendingCodes.pop_front();
         mSendingCodes.push_back(first);
-//        qDebug() << "sending:" << first.first;
-        baseSeqId = std::min(baseSeqId, first.first);
-        std::pair<int,QRcode*> second{0, nullptr};
+//        qDebug() << "sending:" << first.offset << "," << first.len;
+        SendingInfo second{0, 0, nullptr};
         if(mPixelChannel >= 2 && !mPendingCodes.empty())
         {
             second = mPendingCodes.front(); mPendingCodes.pop_front();
             mSendingCodes.push_back(second);
-            baseSeqId = std::min(baseSeqId, second.first);
-//            qDebug() << "sending:" << second.first;
         }
-        std::pair<int,QRcode*> third{0, nullptr};
+        SendingInfo third{0, 0, nullptr};
         if(mPixelChannel >= 3 && !mPendingCodes.empty())
         {
             third = mPendingCodes.front(); mPendingCodes.pop_front();
             mSendingCodes.push_back(third);
-            baseSeqId = std::min(baseSeqId, third.first);
-//            qDebug() << "sending:" << third.first;
         }
 
-        QRcode* qr = first.second;
+        QRcode* qr = first.code;
         int iRow = iImg/mColCnt;
         int iCol = iImg%mColCnt;
         int iX = iCol*(qr->width + mSpliterWidth)*usedScalar + borderWidth + spliterWidth;
@@ -225,8 +250,8 @@ std::pair<QImage, int> SendThread::prepareImages( void )
                 for (int x = 0; x < qr->width; x++) //列
                 {
                     int red = toValue(qr, y, x);
-                    int green = toValue(second.second, y, x);
-                    int blue = toValue(third.second, y, x);
+                    int green = toValue(second.code, y, x);
+                    int blue = toValue(third.code, y, x);
                     QColor clr(red, green, blue);
                     painter.setBrush(clr);
 
@@ -240,5 +265,5 @@ std::pair<QImage, int> SendThread::prepareImages( void )
         }
     }
 
-    return std::make_pair(ret, baseSeqId);
+    return ret;
 }

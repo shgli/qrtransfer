@@ -2,6 +2,7 @@
 #define SENDTHREAD_H
 #include <deque>
 #include <map>
+#include <tuple>
 #include <QFile>
 #include <QTimer>
 #include <QThread>
@@ -18,8 +19,10 @@ public:
     SendThread(const QString& fileName
                , std::unique_ptr<IAck>&& pAckWaiter
                , int scalar=2
+               , int rows=1
+               , int cols=1
                , int pixelChannel=3
-               , int imageCnt=1);
+               );
 
     void run() override;
     void stop();
@@ -29,9 +32,11 @@ signals:
     void timeout();
 
 private:
-    void prepareCfgQRCode(int totalCnt, size_t fsize);
+    void prepareCfgQRCode(size_t fsize);
     void prepareQRCode( void );
-    std::pair<QImage, int> prepareImages( void );
+    void splitQRcode(qint64 offset, qint64 len);
+    int createQRcode(qint64 offset, qint64 len);
+    QImage prepareImages(QColor failColor);
 
     const int mPixelChannel{3};
     const int mImageCnt{1};
@@ -49,15 +54,25 @@ private:
 
     std::unique_ptr<QFile> mInputFile;
 
-    std::deque<std::pair<int32_t, QRcode*>> mPendingCodes;
-    std::vector<std::pair<int32_t, QRcode*>> mSendingCodes;
-    std::vector<std::pair<int32_t, QRcode*>> delayed;
-    int mSequenceId{0};
-    std::vector<char> mBuffer;
+    struct SendingInfo
+    {
+        qint64 offset;
+        qint64 len;
+        QRcode* code;
+    };
+
+    std::deque<SendingInfo> mPendingCodes;
+    std::vector<SendingInfo> mSendingCodes;
+    std::vector<SendingInfo> delayed;
+    uint mNextReadOffset{0};
+    //std::vector<char> mBuffer;
 
     char* mNetSeqId{nullptr};
-    char* mData{nullptr};
+    uchar* mData{nullptr};
+    uchar* mDataEnd{nullptr};
     std::unique_ptr<IAck> mAckWaiter;
+    QColor mIdentityClrs[2] = {Qt::green, Qt::red};
+    uint mIdxIdentityClr{0};
 };
 
 #endif // SENDTHREAD_H
