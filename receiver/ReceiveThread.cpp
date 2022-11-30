@@ -136,7 +136,7 @@ void ReceiveThread::run()
     qint64 recvedLen = 0;
     bool isGrubFullScreen = false;
     int continusFailedCnt = 0;
-    QColor prevIdentityClr = Qt::green;
+    QColor prevIdentityClr = identityClr;
     while(recvedLen < mFileSize && mIsRunning)
     {
         QImage screen = grubScreen(grubRect, codeRect, offset, idOffset, identityClr);
@@ -148,6 +148,12 @@ void ReceiveThread::run()
             continue;
         }
 
+        int r1 = prevIdentityClr.red();
+        int g1 = prevIdentityClr.green();
+        int b1 = prevIdentityClr.blue();
+        int r2 = identityClr.red();
+        int g2 = identityClr.green();
+        int b2 = identityClr.blue();
         if(AreaDetector::IsColor(prevIdentityClr, identityClr, 20))
         {
             msleep(5);

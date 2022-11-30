@@ -117,6 +117,11 @@ bool AreaDetector::IsBorder(QColor clr)
 
 bool AreaDetector::IsIdentityColor(QColor clr)
 {
+    int red = clr.red();
+    int green = clr.green();
+    int blue = clr.blue();
+
+    return (green > 230 && red < 150 && blue < 100) || (red > 230 && green < 150 && blue < 100);
     return AreaDetector::IsColor(clr, Qt::green, 50) || AreaDetector::IsColor(clr, Qt::red, 50);
 }
 
