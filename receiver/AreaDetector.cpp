@@ -6,7 +6,9 @@ AreaDetector::AreaDetector(QColor borderClr
 :mBorderClr(borderClr)
 ,mMinSize(minSize)
 ,mDistThreshold(distThres)
-{}
+{
+    mBorderClr1 = QColor((255+borderClr.red())/2, (255+borderClr.green())/2, (255+borderClr.blue())/2);
+}
 
 bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode, QPoint& offset, QPoint& idClrPos, QColor& idClr)
 {
@@ -18,9 +20,9 @@ bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode, QPoint& of
         for(int x = 0; x < img.width(); ++x)
         {
             QColor clr = img.pixelColor(x, y);
-//            auto red1 = clr.red();
-//            auto red2 = clr.red();
-//            auto green1 = clr.green();
+            auto red1 = clr.red();
+            auto blue1 = clr.blue();
+            auto green1 = clr.green();
             if(IsWhite(clr))
             {
                 if(prev != &white && nullptr != prev)
@@ -30,7 +32,7 @@ bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode, QPoint& of
                 }
                 white.len++;
 
-                if(1 == mPattern.size())
+                if(1==white.len && 1 == mPattern.size())
                 {
                     int len = DetectVLine(img, prev->x, y+1, prev->len, 1)+1;
                     int bottom = y + len;
@@ -41,7 +43,7 @@ bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode, QPoint& of
                         if(IsCorner(img, prev->x, bottom, prev->len, idClr))
                         {
                             int hlen = DetectHLine(img, x, bottom, prev->len);
-                            //if(std::abs(hlen-len)*50 < std::min(hlen,len))
+                            if(hlen >= mMinSize)
                             {
                                 static const qreal pixelRatio = qApp->devicePixelRatio();
                                 static const int PIXEL_RATIO = std::ceil(pixelRatio);
@@ -69,6 +71,7 @@ bool AreaDetector::detect(QImage img, QRect& rcGrub, QRect& rcQRcode, QPoint& of
                 }
 
                 prev = &white;
+                mPattern.clear();
             }
             else if(IsBorder(clr))
             {
@@ -111,7 +114,9 @@ bool AreaDetector::IsWhite(QColor clr)
 
 bool AreaDetector::IsBorder(QColor clr)
 {
-    return (std::abs(clr.red()-clr.green())-std::abs(clr.red()-clr.blue())) < 20 &&IsColor(mBorderClr, clr, mDistThreshold);
+    return (std::abs(clr.red()-clr.green())-std::abs(clr.red()-clr.blue())) < 20
+            && (IsColor(mBorderClr, clr, mDistThreshold)
+            || IsColor(mBorderClr1, clr, mDistThreshold));
 }
 
 
@@ -121,13 +126,17 @@ bool AreaDetector::IsIdentityColor(QColor clr)
     int green = clr.green();
     int blue = clr.blue();
 
-    return (green > 230 && red < 150 && blue < 100) || (red > 230 && green < 150 && blue < 100);
+    return (green > 230 && red < 150 && blue < 100) || (red > 220 && green < 150 && blue < 100);
     return AreaDetector::IsColor(clr, Qt::green, 50) || AreaDetector::IsColor(clr, Qt::red, 50);
 }
 
 bool AreaDetector::IsCorner(const QImage& img, int x, int y, int w, QColor& idClr)
 {
-    idClr = img.pixelColor(x, y);
+    QRect area(x,y, w, w);
+    idClr = img.pixelColor(area.center());
+
+    return IsIdentityColor(idClr);
+
     if(!IsIdentityColor(idClr))
     {
         return false;
@@ -187,16 +196,24 @@ int AreaDetector::DetectHLine(QImage img, int x, int y, int w)
     int len = 0;
     for(; x < img.width(); ++x)
     {
-        QColor first = img.pixelColor(x, y-1);
-        QColor last = img.pixelColor(x, y+w);
+        QColor first = img.pixelColor(x, y-2);
+        QColor last = img.pixelColor(x, y+w+1);
         if(!IsWhite(first) || !IsWhite(last))
         {
             return len;
         }
 
-        int yy = y+w-1;
-        while(yy >= y && IsBorder(img.pixelColor(x, yy)))
+        int yy = y+w-2;
+        QColor clr = img.pixelColor(x, yy);
+        int red = clr.red();
+        int green = clr.green();
+        int blue = clr.blue();
+        while(yy >= y && (IsBorder(clr) || (blue<20 && (green < 150 || red < 150))))
         {
+            clr = img.pixelColor(x, yy);
+            red = clr.red();
+            green = clr.green();
+            blue = clr.blue();
             --yy;
         }
 

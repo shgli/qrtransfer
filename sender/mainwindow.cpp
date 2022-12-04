@@ -42,11 +42,7 @@ MainWindow::MainWindow(QWidget *parent)
             QClipboard* pClipboard = QApplication::clipboard();
             pClipboard->clear();
             std::unique_ptr<IAck> pAckWaiter;
-#ifdef Q_OS_MACOS
-            pAckWaiter = std::make_unique<PollClipboardAck>(5);
-#else
-            pAckWaiter = std::make_unique<WatchClipboardAck>();
-#endif
+
             int scalar = ui->mScalar->text().toInt();
             QString imgCfg = ui->mImgCfg->text();
             QList<QString> imgCfgs = imgCfg.split('x');
@@ -63,6 +59,21 @@ MainWindow::MainWindow(QWidget *parent)
                 cols = imgCfgs[1].toInt();
             }
 
+            auto ackMode = ui->mAckMode->currentText();
+            if(ackMode == "ClipboardEvent")
+            {
+                pAckWaiter = std::make_unique<WatchClipboardAck>();
+            }
+            else if(ackMode == "PollClipboard")
+            {
+                pAckWaiter = std::make_unique<PollClipboardAck>(5);
+            }
+            else
+            {
+                pAckWaiter = std::make_unique<WatchKeyEventAck>();
+                rows = cols = 1;
+            }
+
             mSender = std::make_unique<SendThread>(transferFileName, std::move(pAckWaiter), scalar, rows, cols, pixelChannels);
             mTotalCnt = 0;
             ui->mProgressBar->setValue(0);
@@ -72,12 +83,12 @@ MainWindow::MainWindow(QWidget *parent)
                 if(0 == mTotalCnt)
                 {
                     mTotalCnt = seqId;
-                    ui->mProgressBar->setRange(0, mTotalCnt-1);
+                    ui->mProgressBar->setRange(0, mTotalCnt);
                 }
 
                 ui->label->setPixmap(QPixmap::fromImage(img, Qt::ColorOnly|Qt::ThresholdDither|Qt::ThresholdAlphaDither|Qt::AvoidDither));
                 ui->mProgressBar->setValue(mTotalCnt-seqId);
-            });
+            }, Qt::BlockingQueuedConnection);
 
             connect(mSender.get(), &SendThread::finished, this, [this,transferFileName]()
             {

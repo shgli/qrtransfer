@@ -23,6 +23,16 @@ MainWindow::MainWindow(QWidget *parent)
     ui->mProcessBar->setRange(0, 100);
     ui->mProcessBar->setValue(0);
     ui->mAckNum->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    connect(ui->mReack, &QPushButton::clicked, this, [this]
+    {
+        auto text = ui->mAckNum->text();
+        if(text.contains('[') && text.contains(']'))
+        {
+            auto ackBeg = text.indexOf('[')+1;
+            auto ackEnd = text.indexOf(']');
+            QApplication::clipboard()->setText(text.mid(ackBeg, ackEnd-ackBeg));
+        }
+    });
     connect(ui->mFileBrowserBtn, &QPushButton::clicked, this, [this]()
     {
         if(nullptr != mReceiver)
@@ -61,7 +71,7 @@ MainWindow::MainWindow(QWidget *parent)
                 detailLabel += detail +"]";
                 ui->mAckNum->setText(detailLabel);
                 QApplication::clipboard()->text();
-            });
+            }, Qt::BlockingQueuedConnection);
 
             mReceiver->start();
         }

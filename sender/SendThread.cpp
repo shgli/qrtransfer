@@ -110,7 +110,7 @@ void SendThread::run()
                     {
                         if(nullptr != sending.code)
                         {
-                            if(1) //MAX_BUFFER_SIZE == sending.len && (sending.offset+sending.len) < mInputFile->size())
+                            if(1)//MAX_BUFFER_SIZE == sending.len && (sending.offset+sending.len) < mInputFile->size())
                             {
                                 splitQRcode(sending.offset, sending.len);
                             }

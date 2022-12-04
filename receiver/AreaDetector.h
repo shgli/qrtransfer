@@ -21,6 +21,7 @@ private:
     bool IsCorner(const QImage& img, int x, int y, int w, QColor& idClr);
 
     QColor mBorderClr;
+    QColor mBorderClr1;
     int mMinSize;
     int mDistThreshold;
 

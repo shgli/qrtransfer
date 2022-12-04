@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>521</width>
-    <height>134</height>
+    <height>137</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -38,6 +38,13 @@
        </widget>
       </item>
       <item>
+       <widget class="QPushButton" name="mReack">
+        <property name="text">
+         <string>ReAck</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QPushButton" name="mFileBrowserBtn">
         <property name="text">
          <string>Browser</string>
@@ -49,7 +56,7 @@
     <item>
      <widget class="QLabel" name="Tips">
       <property name="text">
-       <string>传输过程中，如果因为使用剪切板，导致传输中断，请复制[]里面的内容</string>
+       <string>If transfer been blocked, please press ReAck button</string>
       </property>
      </widget>
     </item>
@@ -71,7 +78,7 @@
      <x>0</x>
      <y>0</y>
      <width>521</width>
-     <height>24</height>
+     <height>22</height>
     </rect>
    </property>
   </widget>

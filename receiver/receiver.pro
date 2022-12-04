@@ -24,9 +24,11 @@ FORMS += \
     mainwindow.ui
 OPENCV_WIN32_LIB_PATH=$$PWD/opencv/x64/mingw/lib
 OPENCV_ELSE_LIB_PATH=$$PWD/opencv/lib
+ZBAR_WIN32_LIB_PATH=$$PWD/zbar
+ZBAR_ELSE_LIB_PATH=$$PWD/zbar/lib
 win32:LIBS += $$OPENCV_WIN32_LIB_PATH/libopencv_core460.dll.a $$OPENCV_WIN32_LIB_PATH/libopencv_imgproc460.dll.a $$OPENCV_WIN32_LIB_PATH/libopencv_wechat_qrcode460.dll.a
-else:LIBS += -L$$OPENCV_ELSE_LIB_PATH -lopencv_core -lopencv_imgproc -lopencv_wechat_qrcode #-L$$PWD/zxing/lib -lzxing
-INCLUDEPATH += $$PWD/opencv/include #$$PWD/zxing/include
+else:LIBS += -L$$OPENCV_ELSE_LIB_PATH -lopencv_core -lopencv_imgproc -lopencv_wechat_qrcode -L$$ZBAR_ELSE_LIB_PATH -lzbar #-L$$PWD/zxing/lib -lzxing
+INCLUDEPATH += $$PWD/opencv/include $$PWD/zbar/include #$$PWD/zxing/include
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

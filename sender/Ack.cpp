@@ -71,6 +71,9 @@ void PollClipboardAck::doStop()
 
 }
 
+WatchKeyEventAck::WatchKeyEventAck()
+{}
+
 QString WatchKeyEventAck::doWait()
 {
     return QString();

@@ -11,10 +11,10 @@ QImage ReceiveThread::grubScreen(QRect& area, QRect& qrCode, QPoint& offset, QPo
 
     QPixmap full = pScreen->grabWindow(0, area.left(), area.top(), area.width(), area.height());
     QImage img = full.toImage();
-
     AreaDetector detector(Qt::black, 354, 50);
-    bool isFull = 0 == area.top() && 0 == area.left();
+    bool isFull = area.size()==pScreen->size();
     idClr = Qt::white;
+
     if(!isFull)
     {
         qrCode.moveTo(offset);
@@ -23,6 +23,7 @@ QImage ReceiveThread::grubScreen(QRect& area, QRect& qrCode, QPoint& offset, QPo
 
         if(!detector.IsIdentityColor(idClr))
         {
+            qDebug() << "id color failed";
             return QImage();
         }
     }
@@ -33,7 +34,10 @@ QImage ReceiveThread::grubScreen(QRect& area, QRect& qrCode, QPoint& offset, QPo
         return QImage();
     }
 
-
+//    if(isFull)
+//    {
+//        qDebug() << "full";
+//    }
 
     return img;
 }
@@ -81,6 +85,7 @@ void ReceiveThread::stop()
 
 void ReceiveThread::run()
 {
+    qDebug() << "rcv thread:" << currentThreadId();
     static qreal pixelRatio = qApp->primaryScreen()->devicePixelRatio();
     std::vector<cv::Mat> points;   // qrcode: Retangle, not RotatedBox
     QRect fullScreenRect = qApp->primaryScreen()->virtualGeometry();
@@ -275,7 +280,7 @@ void ReceiveThread::run()
             isGrubFullScreen = true;
         }
 
-        msleep(5);
+        //msleep(5);
     }
 
     mOutputFile->close();
