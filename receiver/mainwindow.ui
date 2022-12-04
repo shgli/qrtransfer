@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>521</width>
-    <height>137</height>
+    <height>158</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -56,7 +56,7 @@
     <item>
      <widget class="QLabel" name="Tips">
       <property name="text">
-       <string>If transfer been blocked, please press ReAck button</string>
+       <string>If transfer been blocked, please press the ReAck button</string>
       </property>
      </widget>
     </item>
@@ -78,7 +78,7 @@
      <x>0</x>
      <y>0</y>
      <width>521</width>
-     <height>22</height>
+     <height>24</height>
     </rect>
    </property>
   </widget>

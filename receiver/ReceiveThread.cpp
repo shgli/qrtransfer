@@ -283,6 +283,7 @@ void ReceiveThread::run()
         //msleep(5);
     }
 
+    mOutputFile->unmap((uchar*)pFileData);
     mOutputFile->close();
 }
 

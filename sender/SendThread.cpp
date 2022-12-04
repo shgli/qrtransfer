@@ -129,6 +129,7 @@ void SendThread::run()
     {
         emit qrReady(QImage(), fsize-recvedLen);
     }
+    mInputFile->unmap(mData);
     mInputFile->close();
 }
 
