@@ -30,4 +30,7 @@ sender端将数据显示为二维码，receiver截屏识别二维码，然后通
 ## 编译依赖: 
 libpnl, libqrencode, 微信识别二维码的opencv扩展 zbar
 
+## TODO:
+1. 改进receiver中边界识别算法;
+2. 开启一个新项目qrforward, 支持端口转发，从而实现云桌面内网程序与本机程序直接交互。
 ## <span style="color:red">使用前请征得系统管理员的同意，否则请立马删除本软件，因为使用本软件造成的一切后果由您自己承担</span>.
