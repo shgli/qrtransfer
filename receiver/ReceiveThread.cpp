@@ -234,7 +234,7 @@ void ReceiveThread::run()
             std::vector<uint64_t> successDetail(taskCnt/64+((0 != (taskCnt%64)) ? 1 : 0), 0UL);
             for(auto susIdx : successIdxs)
             {
-                successDetail[susIdx/64] |= 1 << (susIdx%64);
+                successDetail[susIdx/64] |= 1UL << (susIdx%64);
             }
 
             for(uint64_t detail : successDetail)

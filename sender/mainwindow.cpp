@@ -86,6 +86,7 @@ MainWindow::MainWindow(QWidget *parent)
                     ui->mProgressBar->setRange(0, mTotalCnt);
                 }
 
+                qDebug() << "DPI:" << img.dotsPerMeterX() << "x" << img.dotsPerMeterY();
                 ui->label->setPixmap(QPixmap::fromImage(img, Qt::ColorOnly|Qt::ThresholdDither|Qt::ThresholdAlphaDither|Qt::AvoidDither));
                 ui->mProgressBar->setValue(mTotalCnt-seqId);
             }, Qt::BlockingQueuedConnection);
